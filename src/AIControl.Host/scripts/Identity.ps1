@@ -12,11 +12,11 @@ function Stop-VerifiedServiceProcess {
     if (-not $target) { return }
     try {
         if ($target.HasExited) { return }
-        if (-not [string]::Equals($target.Path, $ExpectedExecutable, [StringComparison]::OrdinalIgnoreCase)) { throw 'Die Prozessidentitaet hat sich geaendert.' }
-        if ([Math]::Abs(($target.StartTime.ToUniversalTime() - $Process.CreationDate.ToUniversalTime()).TotalSeconds) -gt 1) { throw 'Die Prozess-ID wurde inzwischen wiederverwendet.' }
+        if (-not [string]::Equals($target.Path, $ExpectedExecutable, [StringComparison]::OrdinalIgnoreCase)) { throw 'The process identity has changed.' }
+        if ([Math]::Abs(($target.StartTime.ToUniversalTime() - $Process.CreationDate.ToUniversalTime()).TotalSeconds) -gt 1) { throw 'The process ID has been reused.' }
         Stop-Process -InputObject $target -ErrorAction Stop
         # Keep the original kernel handle: CIM snapshots may retain an exited
         # process briefly, and a fresh PID lookup can refer to another process.
-        if (-not $target.WaitForExit(30000)) { throw 'Der Server beendet sich noch. Bitte kurz warten.' }
+        if (-not $target.WaitForExit(30000)) { throw 'The server is still stopping. Please wait a moment.' }
     } finally { $target.Dispose() }
 }

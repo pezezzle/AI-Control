@@ -1,0 +1,23 @@
+name: Windows build
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: .\Build.ps1 -Verify
+      - run: dotnet publish src/AIControl.Host/AIControl.Host.csproj -c Release -r win-x64 --self-contained true -o artifacts/app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ai-control-win-x64
+          path: artifacts/app

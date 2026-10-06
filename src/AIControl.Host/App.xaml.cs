@@ -19,7 +19,7 @@ public partial class App : Application
             Shutdown(); return;
         }
         try { MainWindow = new MainWindow(SettingsStore.Load()); MainWindow.Show(); }
-        catch (Exception ex) { MessageBox.Show(ex.Message + "\n\nEinstellungen: " + SettingsStore.SettingsPath, "AI Control", MessageBoxButton.OK, MessageBoxImage.Error); Shutdown(1); }
+        catch (Exception ex) { MessageBox.Show(ex.Message + "\n\nSettings: " + SettingsStore.SettingsPath, "AI Control", MessageBoxButton.OK, MessageBoxImage.Error); Shutdown(1); }
     }
     protected override void OnExit(ExitEventArgs e) { instance?.Dispose(); base.OnExit(e); }
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr window, int command);

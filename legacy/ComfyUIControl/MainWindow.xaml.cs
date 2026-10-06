@@ -48,22 +48,22 @@ public partial class MainWindow : Window
         if (closed) return;
         var (label, detail, color) = status.State switch
         {
-            ServerState.Offline => ("Gestoppt", "Bereit zum Starten.", "#8F9FB7"),
-            ServerState.Running => ("Läuft", "ComfyUI ist bereit. Du kannst den Browser öffnen.", "#53D6AD"),
-            ServerState.Rendering => ("Render läuft", $"{status.Running} laufend · {status.Pending} vorgemerkt", "#53D6AD"),
-            ServerState.Foreign => ("Port belegt", "Ein anderes Programm antwortet auf dem ComfyUI-Port.", "#F2B7BA"),
-            _ => ("Nicht erreichbar", "ComfyUI antwortet noch nicht. Du kannst den Start versuchen oder das Protokoll öffnen.", "#F5BF69"),
+            ServerState.Offline => ("Stopped", "Ready to start.", "#8F9FB7"),
+            ServerState.Running => ("Running", "ComfyUI is ready. You can open the browser.", "#53D6AD"),
+            ServerState.Rendering => ("Rendering", $"{status.Running} active · {status.Pending} queued", "#53D6AD"),
+            ServerState.Foreign => ("Port in use", "Another application responds on the ComfyUI port.", "#F2B7BA"),
+            _ => ("Unreachable", "ComfyUI is not responding yet. Try starting it or open the log.", "#F5BF69"),
         };
-        if (starting) (label, detail, color) = ("Startet …", "Das kann einen Moment dauern.", "#75B9FF");
-        else if (operating) (label, detail, color) = ("Wird beendet …", "ComfyUI wird gestoppt.", "#F5BF69");
-        else if (stopScheduled) (label, detail, color) = ("Beenden vorgemerkt", status.QueueKnown ? $"Wartet auf alle Aufträge · {status.Running} laufend · {status.Pending} vorgemerkt" : "Wartet auf einen zuverlässig erkennbaren Leerlauf.", "#F5BF69");
+        if (starting) (label, detail, color) = ("Starting …", "This may take a moment.", "#75B9FF");
+        else if (operating) (label, detail, color) = ("Stopping …", "ComfyUI is stopping.", "#F5BF69");
+        else if (stopScheduled) (label, detail, color) = ("Stop scheduled", status.QueueKnown ? $"Waiting for all jobs · {status.Running} active · {status.Pending} queued" : "Waiting until the server is reliably idle.", "#F5BF69");
         StatusText.Text = label;
         DetailText.Text = detail;
         StatusDot.Fill = (Brush)new BrushConverter().ConvertFromString(color)!;
         StartButton.IsEnabled = !operating && !deciding && !stopScheduled && status.State is ServerState.Offline or ServerState.Unreachable;
         BrowserButton.IsEnabled = status.QueueKnown;
         StopButton.IsEnabled = !operating && !deciding && (stopScheduled || status.State is ServerState.Running or ServerState.Rendering or ServerState.Unreachable);
-        StopButton.Content = stopScheduled ? "Aufheben" : "Beenden";
+        StopButton.Content = stopScheduled ? "Cancel stop" : "Stop";
         LogButton.Visibility = NoticeText.Text.Length > 0 || status.State is ServerState.Foreign or ServerState.Unreachable ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -121,7 +121,7 @@ public partial class MainWindow : Window
     {
         if (closed) return;
         var message = ex.Message.Split('\n')[0].Trim();
-        NoticeText.Text = (message.Length > 160 ? message[..160] + " …" : message) + " Details im Protokoll.";
+        NoticeText.Text = (message.Length > 160 ? message[..160] + " …" : message) + " See the log for details.";
         try
         {
             var folder = System.IO.Path.Combine(control.InstallRoot, "logs");
@@ -142,7 +142,7 @@ public partial class MainWindow : Window
     private void OnClosing(object? sender, CancelEventArgs e)
     {
         if (!stopScheduled) return;
-        var answer = MessageBox.Show(this, "ComfyUI soll nach den Aufträgen beendet werden.\n\nWenn du dieses Fenster schließt, wird die Vormerkung aufgehoben und ComfyUI läuft weiter.\n\nTrotzdem schließen?", "Beenden vorgemerkt", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+        var answer = MessageBox.Show(this, "ComfyUI is scheduled to stop after all jobs.\n\nClosing this window cancels that schedule and leaves ComfyUI running.\n\nClose anyway?", "Stop scheduled", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
         e.Cancel = answer != MessageBoxResult.Yes;
         if (!e.Cancel) stopScheduled = false;
     }

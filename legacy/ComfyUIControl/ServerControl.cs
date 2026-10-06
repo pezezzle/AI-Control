@@ -24,7 +24,7 @@ public sealed class ScriptRunner : IScriptRunner
 {
     public async Task RunAsync(string path, bool noBrowser = false)
     {
-        if (!File.Exists(path)) throw new FileNotFoundException("Das ComfyUI-Skript fehlt.", path);
+        if (!File.Exists(path)) throw new FileNotFoundException("The ComfyUI script is missing.", path);
         var info = new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
@@ -37,7 +37,7 @@ public sealed class ScriptRunner : IScriptRunner
         };
         foreach (var value in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", path }) info.ArgumentList.Add(value);
         if (noBrowser) info.ArgumentList.Add("-NoBrowser");
-        using var process = Process.Start(info) ?? throw new InvalidOperationException("Das Skript konnte nicht gestartet werden.");
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("The script could not start.");
         using var reading = new CancellationTokenSource();
         var stdout = process.StandardOutput.ReadToEndAsync(reading.Token);
         var stderr = process.StandardError.ReadToEndAsync(reading.Token);
@@ -53,7 +53,7 @@ public sealed class ScriptRunner : IScriptRunner
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? output.Trim() : error.Trim());
         }
         catch (OperationCanceledException)
-        { throw new InvalidOperationException($"Das ComfyUI-Skript wurde mit Fehlercode {process.ExitCode} beendet. Bitte das Serverprotokoll prüfen."); }
+        { throw new InvalidOperationException($"The ComfyUI script exited with code {process.ExitCode}. Check the server log."); }
     }
 }
 
@@ -103,7 +103,7 @@ public sealed class ServerControl : IDisposable
     {
         var status = await ReadStatusAsync();
         if (status.State == ServerState.Offline) return StopResult.Stopped;
-        if (status.State == ServerState.Foreign) throw new InvalidOperationException("Auf Port 8188 antwortet ein anderes Programm. Es wird nicht beendet.");
+        if (status.State == ServerState.Foreign) throw new InvalidOperationException("Another application responds on port 8188. It will not be stopped.");
         if (!force && (!status.QueueKnown || status.HasJobs)) return StopResult.Waiting;
         // The existing script rechecks executable, command line and port owner before stopping.
         await runner.RunAsync(Path.Combine(InstallRoot, "Stop-ComfyUI.ps1"));

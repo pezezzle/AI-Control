@@ -10,8 +10,8 @@ public partial class StopDialog : Window
     {
         InitializeComponent();
         Explanation.Text = status.QueueKnown
-            ? $"Es laufen {status.Running} Aufträge; {status.Pending} warten.\n\nSofortiges Beenden bricht sie ab. Alternativ wartet die App, bis alle Aufträge fertig sind."
-            : "Die Warteschlange kann gerade nicht geprüft werden. Sofortiges Beenden könnte einen laufenden Render abbrechen. Alternativ wartet die App auf einen erkennbaren Leerlauf.";
+            ? $"{status.Running} jobs are active; {status.Pending} are queued.\n\nStopping now cancels them. Alternatively, wait until all jobs finish."
+            : "The queue cannot currently be checked. Stopping now could interrupt a render. Alternatively, wait until the server is reliably idle.";
     }
     private void Wait_Click(object sender, RoutedEventArgs e) { Choice = StopChoice.Wait; DialogResult = true; }
     private void Force_Click(object sender, RoutedEventArgs e) { Choice = StopChoice.Force; DialogResult = true; }

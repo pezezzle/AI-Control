@@ -21,8 +21,8 @@ public sealed class ScriptRunner : IScriptRunner
     {
         service.Validate();
         var script = Path.Combine(AppContext.BaseDirectory, "scripts", "Control-Service.ps1");
-        if (!File.Exists(script)) throw new FileNotFoundException("Das Steuerungsskript fehlt.", script);
-        if (!Directory.Exists(service.Root)) throw new DirectoryNotFoundException("Der Installationsordner wurde nicht gefunden.");
+        if (!File.Exists(script)) throw new FileNotFoundException("The control script is missing.", script);
+        if (!Directory.Exists(service.Root)) throw new DirectoryNotFoundException("The installation folder was not found.");
         var info = new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
@@ -32,7 +32,7 @@ public sealed class ScriptRunner : IScriptRunner
         foreach (var value in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Action", start ? "Start" : "Stop",
             "-Kind", service.Kind.ToString(), "-InstallDirectory", service.Root, "-Port", service.Port.ToString(CultureInfo.InvariantCulture),
             "-Model", service.Model, "-ContextSize", service.ContextSize.ToString(CultureInfo.InvariantCulture), "-GpuLayers", service.GpuLayers }) info.ArgumentList.Add(value);
-        using var process = Process.Start(info) ?? throw new InvalidOperationException("Die Serversteuerung konnte nicht starten.");
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("The server controller could not start.");
         using var reading = new CancellationTokenSource();
         var stdout = process.StandardOutput.ReadToEndAsync(reading.Token); var stderr = process.StandardError.ReadToEndAsync(reading.Token);
         await process.WaitForExitAsync();
@@ -44,7 +44,7 @@ public sealed class ScriptRunner : IScriptRunner
             var output = await stdout; var error = await stderr;
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? output.Trim() : error.Trim());
         }
-        catch (OperationCanceledException) { throw new InvalidOperationException($"Server-Aktion fehlgeschlagen (Fehlercode {process.ExitCode}). Bitte das Protokoll prüfen."); }
+        catch (OperationCanceledException) { throw new InvalidOperationException($"Server action failed (exit code {process.ExitCode}). Check the log."); }
     }
 }
 public sealed class ServerControl : IDisposable
@@ -115,7 +115,7 @@ public sealed class ServerControl : IDisposable
     {
         var status = await ReadStatusAsync();
         if (status.State == ServerState.Offline) return StopResult.Stopped;
-        if (status.State == ServerState.Foreign) throw new InvalidOperationException("Auf dem Server-Port antwortet ein anderes Programm. Es wird nicht beendet.");
+        if (status.State == ServerState.Foreign) throw new InvalidOperationException("Another application responds on the server port. It will not be stopped.");
         if (!force && (!status.QueueKnown || status.HasJobs)) return StopResult.Waiting;
         await runner.RunAsync(Definition, false); return StopResult.Stopped;
     }

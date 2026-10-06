@@ -5,7 +5,7 @@ The ComfyUI and llama.cpp installations, weights, generated outputs and user
 projects live outside this repository. Never move or delete them as part of
 application maintenance.
 
-- Keep the German UI concise. Use C#/.NET 10 and WPF without additional runtime
+- Keep the English UI concise. Use C#/.NET 10 and WPF without additional runtime
   dependencies unless required by an explicit feature request.
 - Read server health and workload before stopping. Unknown workload must not be
   treated as idle. Stop only the exact configured executable and installation.

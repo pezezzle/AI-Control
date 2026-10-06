@@ -13,7 +13,7 @@ public sealed record ServiceDefinition
     public int ContextSize { get; init; } = 32768;
     public string GpuLayers { get; init; } = "auto";
     [JsonIgnore] public string Id => Kind == ServiceKind.ComfyUI ? "comfy" : "coding";
-    [JsonIgnore] public string Name => Kind == ServiceKind.ComfyUI ? "ComfyUI" : "Coding-Server";
+    [JsonIgnore] public string Name => Kind == ServiceKind.ComfyUI ? "ComfyUI" : "Coding server";
     [JsonIgnore] public string Url => $"http://127.0.0.1:{Port}";
     [JsonIgnore] public string Root => Path.GetFullPath(Environment.ExpandEnvironmentVariables(InstallDirectory));
     [JsonIgnore] public string LogDirectory => Path.Combine(SettingsStore.DataDirectory, Id);
@@ -21,14 +21,14 @@ public sealed record ServiceDefinition
         ? Directory.EnumerateFiles(Path.Combine(Root, "models"), "*.gguf").Select(Path.GetFileName).OfType<string>().Order() : [];
     public void Validate()
     {
-        if (Port is < 1024 or > 65535) throw new InvalidDataException("Der Server-Port muss zwischen 1024 und 65535 liegen.");
+        if (Port is < 1024 or > 65535) throw new InvalidDataException("The server port must be between 1024 and 65535.");
         var expanded = Environment.ExpandEnvironmentVariables(InstallDirectory);
-        if (!Path.IsPathFullyQualified(expanded)) throw new InvalidDataException("Bitte einen vollständigen Installationspfad auswählen.");
+        if (!Path.IsPathFullyQualified(expanded)) throw new InvalidDataException("Choose an absolute installation path.");
         if (Kind == ServiceKind.Llama && (string.IsNullOrWhiteSpace(Model) || Model != Path.GetFileName(Model) || Model.Contains('\\') || Model.Contains('/') || !Model.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidDataException("Bitte eine GGUF-Datei aus dem Modellordner auswählen.");
-        if (ContextSize is < 2048 or > 131072) throw new InvalidDataException("Ungültige Kontextgröße.");
+            throw new InvalidDataException("Choose a GGUF file from the model folder.");
+        if (ContextSize is < 2048 or > 131072) throw new InvalidDataException("Invalid context size.");
         if (GpuLayers != "auto" && GpuLayers != "all" && (!int.TryParse(GpuLayers, out var count) || count is < 0 or > 999))
-            throw new InvalidDataException("Ungültige GPU-Zuteilung.");
+            throw new InvalidDataException("Invalid GPU allocation.");
     }
 }
 public sealed record ControlSettings
@@ -40,8 +40,8 @@ public sealed record ControlSettings
     {
         ComfyUI.Validate(); Coding.Validate();
         if (ComfyUI.Kind != ServiceKind.ComfyUI || Coding.Kind != ServiceKind.Llama || ComfyUI.Port == Coding.Port)
-            throw new InvalidDataException("Die beiden Server benötigen unterschiedliche Dienste und Ports.");
-        if (!Path.IsPathFullyQualified(ProjectDirectory)) throw new InvalidDataException("Bitte einen vollständigen Projektpfad auswählen.");
+            throw new InvalidDataException("The two servers require distinct service types and ports.");
+        if (!Path.IsPathFullyQualified(ProjectDirectory)) throw new InvalidDataException("Choose an absolute project path.");
     }
 }
 public static class SettingsStore
@@ -52,7 +52,7 @@ public static class SettingsStore
     public static ControlSettings Load(string? path = null)
     {
         path ??= SettingsPath;
-        var settings = File.Exists(path) ? JsonSerializer.Deserialize<ControlSettings>(File.ReadAllText(path), Json) ?? throw new InvalidDataException("Leere Einstellungen.") : new();
+        var settings = File.Exists(path) ? JsonSerializer.Deserialize<ControlSettings>(File.ReadAllText(path), Json) ?? throw new InvalidDataException("Empty settings.") : new();
         settings.Validate(); return settings;
     }
     public static void Save(ControlSettings settings, string? path = null)

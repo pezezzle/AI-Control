@@ -16,16 +16,16 @@ const renderedCards=new Map<string,string>();
 function send(type:string,extra:Record<string,unknown>={}):void { bridge?.postMessage({type,...extra}); }
 function service(id:ServiceId):Service|undefined { return state?.services.find(s=>s.id===id); }
 function description(s:Service):{label:string;detail:string;color:string} {
- if(s.operating) return {label:s.starting?'Startet …':'Wird beendet …',detail:s.starting?'Das Modell wird vorbereitet. Einen Moment bitte.':'Der Server wird gestoppt.',color:'amber'};
- if(s.stopScheduled) return {label:'Beenden vorgemerkt',detail:s.queueKnown?`${s.running} laufend · ${s.pending} vorgemerkt. Wartet auf alle Aufträge.`:'Wartet auf einen zuverlässig erkennbaren Leerlauf.',color:'amber'};
+ if(s.operating) return {label:s.starting?'Starting …':'Stopping …',detail:s.starting?'Preparing the model. Please wait a moment.':'The server is stopping.',color:'amber'};
+ if(s.stopScheduled) return {label:'Stop scheduled',detail:s.queueKnown?`${s.running} active · ${s.pending} queued. Waiting for all jobs.`:'Waiting until the server is reliably idle.',color:'amber'};
  switch(s.state) {
-  case 'Offline': return {label:'Gestoppt',detail:'Bereit zum Starten.',color:''};
-  case 'Running':return {label:'Läuft',detail:s.id==='comfy'?'Bereit für Bilder und Videos.':'Bereit für Chat und Coding-Assistenten.',color:'green'};
-  case 'Busy':return {label:s.id==='comfy'?'Render läuft':'Antwort wird erzeugt',detail:`${s.running} laufend · ${s.pending} vorgemerkt`,color:'green'};
-  case 'Loading':return {label:'Modell lädt …',detail:'Der Server ist gestartet und bereitet das Modell vor.',color:'amber'};
-  case 'UnknownQueue':return {label:'Läuft · Aufträge unbekannt',detail:'Der Server antwortet, die Aufträge sind noch nicht zuverlässig erkennbar.',color:'amber'};
-  case 'Foreign':return {label:'Port belegt',detail:'Ein anderes Programm antwortet auf diesem Port.',color:'red'};
-  default:return {label:'Status wird geprüft',detail:'Der Server antwortet noch nicht zuverlässig.',color:'amber'};
+  case 'Offline': return {label:'Stopped',detail:'Ready to start.',color:''};
+  case 'Running':return {label:'Running',detail:s.id==='comfy'?'Ready for images and videos.':'Ready for chat and coding assistants.',color:'green'};
+  case 'Busy':return {label:s.id==='comfy'?'Rendering':'Generating response',detail:`${s.running} active · ${s.pending} queued`,color:'green'};
+  case 'Loading':return {label:'Loading model …',detail:'The server has started and is preparing the model.',color:'amber'};
+  case 'UnknownQueue':return {label:'Running · workload unknown',detail:'The server responds, but its workload cannot yet be determined reliably.',color:'amber'};
+  case 'Foreign':return {label:'Port in use',detail:'Another application responds on this port.',color:'red'};
+  default:return {label:'Checking status',detail:'The server is not responding reliably yet.',color:'amber'};
  }
 }
 function card(s:Service):string {
@@ -33,15 +33,15 @@ function card(s:Service):string {
  const canStart=!s.operating&&!s.stopScheduled&&s.state==='Offline'&&other?.state==='Offline'&&!other.operating;
  const canStop=!s.operating&&s.state!=='Offline'&&s.state!=='Foreign';
  const selected=state?.settings.coding.model??'';
- const model=s.id==='coding'?`<label class="model-label" for="model-${page}">Modell für den nächsten Start</label><select id="model-${page}" class="model-select" data-model ${s.state!=='Offline'||s.operating?'disabled':''}>${s.models.map(m=>`<option value="${escapeHtml(m)}" ${m===selected?'selected':''}>${escapeHtml(m)}</option>`).join('')}</select>`:'';
- const tip=!canStart&&s.state==='Offline'&&other?.state!=='Offline'?` Zuerst ${other?.name??'den anderen Server'} beenden.`:'';
- return `<article class="service-card" data-service="${s.id}"><div class="card-header"><span class="service-glyph ${s.id==='coding'?'coding-glyph':''}" aria-hidden="true">${s.id==='coding'?'&lt;/&gt;':'◈'}</span><div><h2>${escapeHtml(s.name)}</h2><p>${s.id==='comfy'?'Bild- & Videogenerierung':'Lokale Sprachmodelle · llama.cpp'}</p></div></div><p class="status"><span class="dot ${status.color}"></span>${status.label}</p><p class="detail">${escapeHtml(status.detail+tip)}</p>${model}${s.error?`<p class="error" role="alert">${escapeHtml(s.error)}</p>`:''}<div class="card-actions"><div class="actions"><button class="primary" data-action="start" ${canStart?'':'disabled'}>Starten</button><button class="secondary" data-action="openWorkspace" ${s.healthy?'':'disabled'}>In der App öffnen</button><button class="danger" data-action="${s.stopScheduled?'cancelStop':'stop'}" ${canStop?'':'disabled'}>${s.stopScheduled?'Aufheben':'Beenden'}</button></div><div class="card-footer"><button class="text-button" data-action="openBrowser" ${s.healthy?'':'disabled'}>Im Browser öffnen ↗</button><button class="text-button" data-action="openLog">Protokoll</button><button class="text-button" data-action="openFolder">Ordner</button></div></div></article>`;
+ const model=s.id==='coding'?`<label class="model-label" for="model-${page}">Model for the next start</label><select id="model-${page}" class="model-select" data-model ${s.state!=='Offline'||s.operating?'disabled':''}>${s.models.map(m=>`<option value="${escapeHtml(m)}" ${m===selected?'selected':''}>${escapeHtml(m)}</option>`).join('')}</select>`:'';
+ const tip=!canStart&&s.state==='Offline'&&other?.state!=='Offline'?` Stop ${other?.name??'the other server'} first.`:'';
+ return `<article class="service-card" data-service="${s.id}"><div class="card-header"><span class="service-glyph ${s.id==='coding'?'coding-glyph':''}" aria-hidden="true">${s.id==='coding'?'&lt;/&gt;':'◈'}</span><div><h2>${escapeHtml(s.name)}</h2><p>${s.id==='comfy'?'Image & video generation':'Local language models · llama.cpp'}</p></div></div><p class="status"><span class="dot ${status.color}"></span>${status.label}</p><p class="detail">${escapeHtml(status.detail+tip)}</p>${model}${s.error?`<p class="error" role="alert">${escapeHtml(s.error)}</p>`:''}<div class="card-actions"><div class="actions"><button class="primary" data-action="start" ${canStart?'':'disabled'}>Start</button><button class="secondary" data-action="openWorkspace" ${s.healthy?'':'disabled'}>Open in app</button><button class="danger" data-action="${s.stopScheduled?'cancelStop':'stop'}" ${canStop?'':'disabled'}>${s.stopScheduled?'Cancel stop':'Stop'}</button></div><div class="card-footer"><button class="text-button" data-action="openBrowser" ${s.healthy?'':'disabled'}>Open in browser ↗</button><button class="text-button" data-action="openLog">Log</button><button class="text-button" data-action="openFolder">Folder</button></div></div></article>`;
 }
 function render():void {
  if(!state)return;
  element('notice').hidden=!state.notice; element('notice').textContent=state.notice;
  const running=state.services.filter(s=>s.healthy).length;
- element('server-count').textContent=`${running} von ${state.services.length} Diensten läuft`;
+ element('server-count').textContent=`${running} of ${state.services.length} services running`;
  const targets:{id:string;services:Service[]}[]=[{id:'overview-cards',services:state.services},{id:'comfy-card',services:state.services.filter(s=>s.id==='comfy')},{id:'coding-card',services:state.services.filter(s=>s.id==='coding')}];
  for(const target of targets) {
   if(element(target.id).closest<HTMLElement>('.page')?.hidden)continue;
@@ -69,8 +69,8 @@ document.addEventListener('click',event=>{
  const id=button.closest<HTMLElement>('[data-service]')?.dataset.service as ServiceId; const current=service(id); if(!current)return;
  const action=button.dataset.action!;
  if(action==='stop'&&(!current.queueKnown||current.running+current.pending>0)) {
-  stopping=id; element('stop-title').textContent=`${current.name} beenden?`;
-  element('stop-detail').textContent=current.queueKnown?`${current.running} laufende und ${current.pending} vorgemerkte Aufträge. Du kannst sie fertigstellen lassen oder sofort abbrechen.`:'Der Auftragsstatus ist unbekannt. Warte auf einen erkennbaren Leerlauf oder beende den Server ausdrücklich sofort.';
+  stopping=id; element('stop-title').textContent=`Stop ${current.name}?`;
+  element('stop-detail').textContent=current.queueKnown?`${current.running} active and ${current.pending} queued jobs. Let them finish or cancel immediately.`:'The workload is unknown. Wait until the server is reliably idle or explicitly stop it now.';
   element<HTMLDialogElement>('stop-dialog').showModal();return;
  }
  send(action,{serviceId:id,...(action==='stop'?{mode:'wait'}:{})});
@@ -98,11 +98,11 @@ element('settings-form').addEventListener('submit',event=>{
 });
 bridge?.addEventListener('message',event=>{
  if(event.data.type==='snapshot'){state=event.data as Snapshot;render();}
- if(event.data.type==='settingsSaved'){settingsDirty=false;element('settings-result').textContent='Gespeichert';}
+ if(event.data.type==='settingsSaved'){settingsDirty=false;element('settings-result').textContent='Saved';}
  if(event.data.type==='folderChosen'){
   const field=event.data.field as string;
   if(field==='comfy'||field==='coding'){element<HTMLInputElement>(`${field}-root`).value=event.data.path as string;settingsDirty=true;}
  }
- if(event.data.type==='apiCopied'){element('copy-api').textContent='Kopiert ✓';}
+ if(event.data.type==='apiCopied'){element('copy-api').textContent='Copied ✓';}
 });
-if(bridge)send('ready');else{element('notice').hidden=false;element('notice').textContent='Oberflächen-Vorschau · Die Serversteuerung ist nur in der Windows-App verfügbar.';}
+if(bridge)send('ready');else{element('notice').hidden=false;element('notice').textContent='Interface preview · Server controls are available only in the Windows app.';}

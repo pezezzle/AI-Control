@@ -47,7 +47,7 @@ public partial class MainWindow : Window
             core.Navigate(BridgePolicy.Origin + "/index.html");
             await RefreshAsync(); if (!closed) timer.Start();
         }
-        catch (Exception ex) { if (!closed) MessageBox.Show(this, "Die App-Oberfläche konnte nicht starten.\n" + ex.Message, "AI Control", MessageBoxButton.OK, MessageBoxImage.Error); }
+        catch (Exception ex) { if (!closed) MessageBox.Show(this, "The app interface could not start.\n" + ex.Message, "AI Control", MessageBoxButton.OK, MessageBoxImage.Error); }
     }
     private async Task RefreshAsync()
     {
@@ -86,27 +86,27 @@ public partial class MainWindow : Window
         if (!BridgePolicy.IsTrustedSource(e.Source) || closed) return;
         try
         {
-            if (e.WebMessageAsJson.Length > 16_384) throw new InvalidDataException("Die Anfrage ist zu groß.");
+            if (e.WebMessageAsJson.Length > 16_384) throw new InvalidDataException("The request is too large.");
             using var document = JsonDocument.Parse(e.WebMessageAsJson); var root = document.RootElement;
             var type = root.GetProperty("type").GetString(); notice = "";
             if (type == "ready") { ready = true; SendSnapshot(); return; }
             if (type == "saveSettings")
             {
-                if (services.Values.Any(s => s.Operating || s.Status.State != ServerState.Offline)) throw new InvalidOperationException("Bitte beide Server beenden, bevor du die Server-Einstellungen änderst.");
-                var updated = root.GetProperty("settings").Deserialize<ControlSettings>(SettingsStore.Json) ?? throw new InvalidDataException("Einstellungen fehlen.");
+                if (services.Values.Any(s => s.Operating || s.Status.State != ServerState.Offline)) throw new InvalidOperationException("Stop both servers before changing server settings.");
+                var updated = root.GetProperty("settings").Deserialize<ControlSettings>(SettingsStore.Json) ?? throw new InvalidDataException("Settings are missing.");
                 updated.Validate(); SettingsStore.Save(updated); settings = updated; ReplaceServices();
                 Send(new { type = "settingsSaved" }); await RefreshAsync(); return;
             }
             if (type == "browseFolder")
             {
                 var field = root.GetProperty("field").GetString();
-                if (field is not ("comfy" or "coding" or "project")) throw new InvalidDataException("Ungültiges Ordnerfeld.");
-                var dialog = new OpenFolderDialog { Title = "Ordner auswählen" };
+                if (field is not ("comfy" or "coding" or "project")) throw new InvalidDataException("Invalid folder field.");
+                var dialog = new OpenFolderDialog { Title = "Choose folder" };
                 if (dialog.ShowDialog(this) == true) Send(new { type = "folderChosen", field, path = dialog.FolderName }); return;
             }
             if (type == "chooseProject")
             {
-                var dialog = new OpenFolderDialog { Title = "Coding-Projekt auswählen", InitialDirectory = settings.ProjectDirectory };
+                var dialog = new OpenFolderDialog { Title = "Choose coding project", InitialDirectory = settings.ProjectDirectory };
                 if (dialog.ShowDialog(this) == true) { settings = settings with { ProjectDirectory = dialog.FolderName }; SettingsStore.Save(settings); SendSnapshot(); } return;
             }
             if (type == "openEditor") { OpenEditor(); return; }
@@ -114,16 +114,16 @@ public partial class MainWindow : Window
             if (type == "selectModel")
             {
                 var coding = services["coding"];
-                if (coding.Operating || coding.Status.State != ServerState.Offline) throw new InvalidOperationException("Bitte den Coding-Server vor dem Modellwechsel beenden.");
+                if (coding.Operating || coding.Status.State != ServerState.Offline) throw new InvalidOperationException("Stop the coding server before changing models.");
                 var model = root.GetProperty("model").GetString() ?? "";
-                if (!settings.Coding.ListModels().Contains(model, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException("Das Modell wurde nicht im Modellordner gefunden.");
+                if (!settings.Coding.ListModels().Contains(model, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException("The model was not found in the model folder.");
                 settings = settings with { Coding = settings.Coding with { Model = model } }; SettingsStore.Save(settings);
                 coding.Control.Dispose(); services["coding"] = new(settings.Coding); await RefreshAsync(); return;
             }
             if (type == "openRepository") { OpenPath(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."))); return; }
             if (type == "back") { HideWorkspace(); return; }
             var id = root.GetProperty("serviceId").GetString() ?? "";
-            if (!services.TryGetValue(id, out var service)) throw new InvalidDataException("Unbekannter Dienst.");
+            if (!services.TryGetValue(id, out var service)) throw new InvalidDataException("Unknown service.");
             if (type == "openLog") { OpenLog(service); return; }
             if (type == "openFolder") { OpenPath(service.Definition.Root); return; }
             if (type == "openBrowser") { OpenPath(service.Definition.Url); return; }
@@ -134,7 +134,7 @@ public partial class MainWindow : Window
             if (type == "stop")
             {
                 var mode = root.GetProperty("mode").GetString();
-                if (mode is not ("wait" or "force")) throw new InvalidDataException("Ungültige Beenden-Auswahl.");
+                if (mode is not ("wait" or "force")) throw new InvalidDataException("Invalid stop option.");
                 await StopAsync(service, mode == "force"); await RefreshAsync();
             }
         }
@@ -149,7 +149,7 @@ public partial class MainWindow : Window
             {
                 var status = await other.Control.ReadStatusAsync();
                 if (other.Operating || status.State != ServerState.Offline)
-                    throw new InvalidOperationException($"Bitte zuerst {other.Definition.Name} beenden. Beide Dienste nutzen dieselbe GPU; laufende Aufträge werden nicht abgebrochen.");
+                    throw new InvalidOperationException($"Stop {other.Definition.Name} first. Both services share the GPU; running jobs will not be canceled.");
             }
             await service.Control.StartAsync();
         }
@@ -184,9 +184,9 @@ public partial class MainWindow : Window
     private static void OpenPath(string value) => Process.Start(new ProcessStartInfo(value) { UseShellExecute = true });
     private void OpenEditor()
     {
-        if (!Directory.Exists(settings.ProjectDirectory)) throw new DirectoryNotFoundException("Der ausgewählte Projektordner fehlt.");
+        if (!Directory.Exists(settings.ProjectDirectory)) throw new DirectoryNotFoundException("The selected project folder is missing.");
         var candidates = new[] { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft VS Code", "Code.exe"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft VS Code", "Code.exe") };
-        var executable = candidates.FirstOrDefault(File.Exists) ?? throw new FileNotFoundException("VS Code wurde nicht gefunden.");
+        var executable = candidates.FirstOrDefault(File.Exists) ?? throw new FileNotFoundException("VS Code was not found.");
         Process.Start(new ProcessStartInfo(executable) { UseShellExecute = false, ArgumentList = { settings.ProjectDirectory } });
     }
     private static void OpenLog(LiveService service)
@@ -194,19 +194,19 @@ public partial class MainWindow : Window
         var folder = service.Definition.LogDirectory; Directory.CreateDirectory(folder);
         var path = Path.Combine(folder, string.IsNullOrEmpty(service.Error) ? "server.err.log" : "control-app.log");
         if (!File.Exists(path) && service.Definition.Kind == ServiceKind.ComfyUI) path = Path.Combine(service.Definition.Root, "logs", "server.err.log");
-        if (!File.Exists(path)) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, "Noch kein Protokoll vorhanden.\r\n"); }
+        if (!File.Exists(path)) { Directory.CreateDirectory(Path.GetDirectoryName(path)!); File.WriteAllText(path, "No log available yet.\r\n"); }
         Process.Start(new ProcessStartInfo("notepad.exe") { UseShellExecute = true, ArgumentList = { path } });
     }
     private static string FriendlyError(Exception ex)
     {
-        var message = ex.Message.Split('\n')[0].Trim(); return message.Length > 280 ? message[..280] + " … Details im Protokoll." : message;
+        var message = ex.Message.Split('\n')[0].Trim(); return message.Length > 280 ? message[..280] + " … See the log for details." : message;
     }
     private static void Log(string id, Exception ex)
     { try { var folder = Path.Combine(SettingsStore.DataDirectory, id); Directory.CreateDirectory(folder); File.AppendAllText(Path.Combine(folder, "control-app.log"), $"{DateTimeOffset.Now:O} {ex}\n"); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     private void OnClosing(object? sender, CancelEventArgs e)
     {
         if (!services.Values.Any(s => s.StopScheduled)) return;
-        var answer = MessageBox.Show(this, "Ein Server soll nach seinen Aufträgen beendet werden.\n\nWenn du die App schließt, wird diese Vormerkung aufgehoben und die Server laufen weiter.\n\nTrotzdem schließen?", "Beenden vorgemerkt", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
+        var answer = MessageBox.Show(this, "A server is scheduled to stop after its jobs finish.\n\nClosing the app cancels that schedule and leaves the servers running.\n\nClose anyway?", "Stop scheduled", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
         e.Cancel = answer != MessageBoxResult.Yes;
     }
     private sealed class LiveService(ServiceDefinition definition)

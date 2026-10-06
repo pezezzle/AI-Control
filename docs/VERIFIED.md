@@ -1,25 +1,29 @@
-# Geprüfter Stand – 6. Oktober 2026
+# Build and test status
 
-Version 0.2 wurde auf einem Windows-PC mit RTX 4090 geprüft.
+Version 0.2 was tested on Windows with an RTX 4090 on October 6, 2026. The interface, documentation, host dialogs, launcher messages, and retained legacy controller were subsequently translated into English.
 
-## Automatische Prüfungen
+## Automated checks
 
-`Build.ps1 -Verify` läuft erfolgreich: Build ohne Warnungen oder Fehler, 41 C#-Prüfungen, sechs Prüfungen zur Prozessidentität, eine Prüfung mit einem echten kurzlebigen Testprozess und sechs Browser-Tests. Insgesamt 54 Prüfungen.
+`Build.ps1 -Verify` builds without warnings or errors and runs 41 C# checks, six process identity checks, one lifecycle check with a real short-lived test process, and six browser tests: **54 checks in total**.
 
-Die Prüfungen decken aktive und wartende Aufträge, unbekannte oder fehlerhafte Statusantworten, fremde Prozesse, erneute Auftragsprüfung vor dem Stoppen, gespeicherte Einstellungen, Modellnamen, die Nachrichten-Schnittstelle und die Oberfläche ab. Browser-Tests verwenden eine simulierte Host-Schnittstelle; sie ersetzen nicht die folgenden Integrationstests.
+Coverage includes active and deferred jobs, unknown or malformed status responses, foreign processes, fresh workload checks before stopping, persisted settings, model filenames, the command bridge, and the interface. Browser tests use a simulated host bridge; they do not replace real service tests. English labels are checked by the interface tests.
 
-## Echte Dienste und Windows-Oberfläche
+## Real services and Windows interface
 
-- ComfyUI während eines laufenden Nutzerauftrags erkannt. Beenden-Dialog angezeigt und abgebrochen; der Render wurde nicht unterbrochen.
-- Nach Abschluss ComfyUI über die neue App beendet und wieder gestartet.
-- ComfyUI und die llama.cpp-Chatoberfläche direkt im App-Fenster geöffnet.
-- Qwen 2.5 Coder 14B mit 32.768 Tokens Kontext über die App auf der RTX 4090 gestartet. llama.cpp meldete 49 von 49 Modellschichten auf der GPU. Eine kurze synthetische Python-Anfrage wurde korrekt beantwortet.
-- Coding-Server anschließend im Leerlauf über die App beendet.
-- Zusätzlich Start, Anfrage und Stop des 7B-Modells im CPU-Modus auf einem separaten Testport über den C#-Launcher und Windows PowerShell 5.1 geprüft. Der Testserver wurde beendet.
-- Projektordner über den Windows-Dialog gewählt, gespeichert und in VS Code geöffnet.
-- Erneuter App-Start aktiviert die vorhandene Instanz.
-- Einstellungen, Desktop-Verknüpfungen und Windows-Symbol visuell geprüft.
+- Detected ComfyUI during a user render. Opened the stop dialog and canceled it; the render was not interrupted.
+- Stopped ComfyUI through the app after the render finished and started it again.
+- Opened ComfyUI and the llama.cpp chat interface inside the app window.
+- Started Qwen 2.5 Coder 14B with a 32,768-token context on the RTX 4090 through the app. llama.cpp reported 49 of 49 model layers on the GPU. A short synthetic Python request was answered correctly.
+- Stopped the coding server through the app while idle.
+- Also tested 7B model startup, a request, and shutdown in CPU mode on a separate test port using the C# launcher and Windows PowerShell 5.1. The test server was stopped.
+- Selected a project through the Windows folder dialog, persisted it, and opened it in VS Code.
+- Confirmed that launching the app again activates the existing instance.
+- Visually checked settings, desktop shortcuts, and the Windows icon.
 
-Das 32B-Modell wird zur Auswahl angeboten, wurde für diese App-Prüfung aber nicht geladen. Eine Editor-Erweiterung wie Cline wurde nicht installiert oder konfiguriert. Die bisherigen Serverinstallationen und Modellgewichte wurden nicht geändert.
+The 32B model is available for selection when present but was not loaded for this verification. An editor extension such as Cline was not installed or configured. Existing server installations and model weights were not changed.
 
-Die Belege und Testantworten werden ausschließlich lokal außerhalb des Repositorys aufbewahrt.
+Evidence and test responses are kept locally outside the repository.
+
+## Build packages
+
+The Windows Actions workflow runs the same automated checks, then publishes a self-contained x64 package as an Actions artifact. Local `Build.ps1 -Publish` output is framework-dependent. Both require WebView2 and preserve the complete output folder. Neither includes model weights or server installations.
