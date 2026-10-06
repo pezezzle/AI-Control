@@ -19,11 +19,11 @@ public partial class MainWindow : Window
     private string notice = "";
     public MainWindow(ControlSettings initial)
     {
-        InitializeComponent(); settings = initial; ReplaceServices();
+        InitializeComponent(); settings = initial; AgentRules.EnsureGlobal(); ReplaceServices();
         Loaded += async (_, _) => await InitializeAsync();
         timer.Tick += async (_, _) => await RefreshAsync();
         Closing += OnClosing;
-        Closed += (_, _) => { closed = true; timer.Stop(); Shell.Dispose(); ServiceView.Dispose(); foreach (var service in services.Values) service.Control.Dispose(); };
+        Closed += (_, _) => { closed = true; chatCancellation?.Cancel(); speechCancellation?.Cancel(); pendingReview?.TrySetResult(false); timer.Stop(); Shell.Dispose(); ServiceView.Dispose(); foreach (var service in services.Values) service.Control.Dispose(); assistant.Dispose(); };
     }
     private void ReplaceServices()
     {
@@ -42,7 +42,12 @@ public partial class MainWindow : Window
             core.SetVirtualHostNameToFolderMapping("ai-control.local", Path.Combine(AppContext.BaseDirectory, "Web"), CoreWebView2HostResourceAccessKind.DenyCors);
             core.NavigationStarting += (_, e) => { if (!BridgePolicy.IsTrustedSource(e.Uri)) e.Cancel = true; };
             core.NewWindowRequested += (_, e) => e.Handled = true;
-            core.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+            core.PermissionRequested += (_, e) =>
+            {
+                e.State = CoreWebView2PermissionState.Deny;
+                if (e.PermissionKind == CoreWebView2PermissionKind.Microphone && BridgePolicy.IsTrustedSource(e.Uri))
+                    e.State = MessageBox.Show(this,"Allow microphone recording for local speech-to-text? Audio is processed on this PC.","Microphone",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No) == MessageBoxResult.Yes ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+            };
             core.WebMessageReceived += OnMessage;
             core.Navigate(BridgePolicy.Origin + "/index.html");
             await RefreshAsync(); if (!closed) timer.Start();
@@ -69,7 +74,7 @@ public partial class MainWindow : Window
         if (!ready || closed || Shell.CoreWebView2 is null) return;
         var snapshot = new
         {
-            type = "snapshot", settings, notice,
+            type = "snapshot", settings, notice, globalRulesPath = AgentRules.GlobalPath, chatBusy,
             services = services.Values.Select(s => new
             {
                 id = s.Definition.Id, name = s.Definition.Name, url = s.Definition.Url,
@@ -77,6 +82,7 @@ public partial class MainWindow : Window
                 healthy = s.Status.Healthy, queueKnown = s.Status.QueueKnown, operating = s.Operating, starting = s.Starting,
                 stopScheduled = s.StopScheduled, error = s.Error,
                 models = s.Definition.Kind == ServiceKind.Llama ? s.Definition.ListModels().ToArray() : [],
+                visionAvailable = s.Definition.Kind == ServiceKind.Llama && s.Definition.VisionEnabled && File.Exists(s.Definition.ProjectorPath),
             })
         };
         Shell.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(snapshot, SettingsStore.Json));
@@ -86,15 +92,17 @@ public partial class MainWindow : Window
         if (!BridgePolicy.IsTrustedSource(e.Source) || closed) return;
         try
         {
-            if (e.WebMessageAsJson.Length > 16_384) throw new InvalidDataException("The request is too large.");
+            if (e.WebMessageAsJson.Length > 30_000_000) throw new InvalidDataException("The request is too large.");
             using var document = JsonDocument.Parse(e.WebMessageAsJson); var root = document.RootElement;
             var type = root.GetProperty("type").GetString(); notice = "";
             if (type == "ready") { ready = true; SendSnapshot(); return; }
+            if (await HandleAssistantAsync(root)) return;
             if (type == "saveSettings")
             {
-                if (services.Values.Any(s => s.Operating || s.Status.State != ServerState.Offline)) throw new InvalidOperationException("Stop both servers before changing server settings.");
+                if (chatBusy || services.Values.Any(s => s.Operating || s.Status.State != ServerState.Offline)) throw new InvalidOperationException("Finish the chat and stop both servers before changing server settings.");
                 var updated = root.GetProperty("settings").Deserialize<ControlSettings>(SettingsStore.Json) ?? throw new InvalidDataException("Settings are missing.");
                 updated.Validate(); SettingsStore.Save(updated); settings = updated; ReplaceServices();
+                if (updated.Assistant.SyncContinueContext) { try { notice = ContinueSettings.SyncContext(updated.Coding.ContextSize); } catch (Exception ex) { notice = "Settings saved; Continue update failed: " + FriendlyError(ex); } }
                 Send(new { type = "settingsSaved" }); await RefreshAsync(); return;
             }
             if (type == "browseFolder")
@@ -106,15 +114,16 @@ public partial class MainWindow : Window
             }
             if (type == "chooseProject")
             {
+                if (chatBusy) throw new InvalidOperationException("Finish or cancel the current chat before changing its workspace.");
                 var dialog = new OpenFolderDialog { Title = "Choose coding project", InitialDirectory = settings.ProjectDirectory };
-                if (dialog.ShowDialog(this) == true) { settings = settings with { ProjectDirectory = dialog.FolderName }; SettingsStore.Save(settings); SendSnapshot(); } return;
+                if (dialog.ShowDialog(this) == true) { settings = settings with { ProjectDirectory = dialog.FolderName }; SettingsStore.Save(settings); assistant.Clear(); Send(new {type="chatCleared"}); SendSnapshot(); } return;
             }
             if (type == "openEditor") { OpenEditor(); return; }
             if (type == "copyApi") { Clipboard.SetText(settings.Coding.Url + "/v1"); Send(new { type = "apiCopied" }); return; }
             if (type == "selectModel")
             {
                 var coding = services["coding"];
-                if (coding.Operating || coding.Status.State != ServerState.Offline) throw new InvalidOperationException("Stop the coding server before changing models.");
+                if (chatBusy || coding.Operating || coding.Status.State != ServerState.Offline) throw new InvalidOperationException("Finish the chat and stop the coding server before changing models.");
                 var model = root.GetProperty("model").GetString() ?? "";
                 if (!settings.Coding.ListModels().Contains(model, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException("The model was not found in the model folder.");
                 settings = settings with { Coding = settings.Coding with { Model = model } }; SettingsStore.Save(settings);
@@ -138,7 +147,7 @@ public partial class MainWindow : Window
                 await StopAsync(service, mode == "force"); await RefreshAsync();
             }
         }
-        catch (Exception ex) { if (!closed) { notice = FriendlyError(ex); Log("host", ex); SendSnapshot(); } }
+        catch (Exception ex) { if (!closed) { notice = FriendlyError(ex); Log("host", new InvalidOperationException(ex.GetType().Name + ": " + notice)); SendSnapshot(); Send(new{type="bridgeError",value=notice}); } }
     }
     private async Task StartAsync(LiveService service)
     {
@@ -158,6 +167,7 @@ public partial class MainWindow : Window
     }
     private async Task StopAsync(LiveService service, bool force)
     {
+        if (service.Definition.Kind == ServiceKind.Llama && chatBusy) { service.Error = "Cancel or finish the assistant chat before stopping its server."; SendSnapshot(); return; }
         service.Operating = true; service.Starting = false; service.Error = ""; SendSnapshot();
         try { service.StopScheduled = await service.Control.StopAsync(force) == StopResult.Waiting; }
         catch (Exception ex) { service.StopScheduled = false; service.Error = FriendlyError(ex); Log(service.Definition.Id, ex); }
@@ -165,6 +175,7 @@ public partial class MainWindow : Window
     }
     private async Task ShowWorkspaceAsync(LiveService service)
     {
+        if (service.Definition.Kind == ServiceKind.Llama) { Send(new {type="openChat"}); return; }
         if (environment is null) return;
         await ServiceView.EnsureCoreWebView2Async(environment);
         var core = ServiceView.CoreWebView2;
@@ -205,6 +216,7 @@ public partial class MainWindow : Window
     { try { var folder = Path.Combine(SettingsStore.DataDirectory, id); Directory.CreateDirectory(folder); File.AppendAllText(Path.Combine(folder, "control-app.log"), $"{DateTimeOffset.Now:O} {ex}\n"); } catch (IOException) { } catch (UnauthorizedAccessException) { } }
     private void OnClosing(object? sender, CancelEventArgs e)
     {
+        if (chatBusy && MessageBox.Show(this,"Closing cancels the current assistant task. Completed file changes remain saved. Close anyway?","Assistant active",MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No) != MessageBoxResult.Yes) { e.Cancel=true; return; }
         if (!services.Values.Any(s => s.StopScheduled)) return;
         var answer = MessageBox.Show(this, "A server is scheduled to stop after its jobs finish.\n\nClosing the app cancels that schedule and leaves the servers running.\n\nClose anyway?", "Stop scheduled", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
         e.Cancel = answer != MessageBoxResult.Yes;

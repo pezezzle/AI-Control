@@ -7,15 +7,18 @@
 [![TypeScript 5.9](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Windows x64](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4)](docs/SETUP.md)
 
-A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, open their interfaces inside one window, choose a coding model, and open a project in VS Code. Development version **0.2**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
+A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.3.1**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
 
-**Project status:** The Windows build and all 54 automated checks pass. Both real services were tested, including a Qwen 2.5 Coder 14B request on an RTX 4090 and guarded stopping. See [Build and test status](docs/VERIFIED.md) for the tested environment and limitations.
+**Project status:** The Windows build and automated server, assistant and interface checks pass. Real local tests cover Huihui Qwen3.8 file tools, reviewed file creation, image recognition and Whisper transcription. See [Build and test status](docs/VERIFIED.md) for the tested environment and limitations.
 
 ## Features
 
 - Service status, active and queued jobs, start/stop controls, logs, and installation folders.
-- ComfyUI and the llama.cpp chat interface embedded directly in the app, with an option to open a browser instead.
-- Existing GGUF model selection, context size, and automatic GPU allocation with RAM offloading for larger models.
+- ComfyUI embedded in the app and a built-in local assistant with streamed responses and cancelable tasks.
+- Workspace file listing, reading, search and reviewed writes; read-only access by default, with optional separately approved script execution.
+- Mandatory global `AGENTS.md`, project and directory rules, and a visible list of loaded instructions.
+- PNG, JPEG and WebP attachments with compatible vision models; local microphone dictation through Whisper.
+- Existing GGUF model selection, custom numeric context size, model-limit validation, optional Continue context sync and automatic GPU allocation.
 - Project folder selection, VS Code launch, and connection details for compatible coding assistants.
 - Stop after all jobs finish, explicit immediate cancellation, and cancellation of a scheduled stop.
 - Saved local settings, a Windows app icon, desktop shortcuts, and single-instance behavior.
@@ -49,7 +52,7 @@ There is currently no published GitHub Release or installer. The local `Build.ps
 
 The coding server provides an OpenAI-compatible API at `http://127.0.0.1:8080/v1` by default, with model ID `local-coder`. In Cline or a compatible editor assistant, select **OpenAI Compatible**, enter that address and model ID, and use a placeholder such as `local` if the client requires a nonempty API key.
 
-The app starts the server and opens VS Code. It does not install or configure an editor extension automatically. Code editing takes place in the editor. The embedded chat is the existing llama.cpp Web UI and has no access to the controller's privileged Windows commands.
+The app starts the server, offers its own workspace assistant and can open VS Code. It does not install an editor extension automatically. **Open in app** on the Coding server opens the built-in Assistant. **Open in browser** opens the original llama.cpp Web UI, which cannot access the app's workspace tools. See [Assistant, rules, images and dictation](docs/ASSISTANT.md).
 
 ## Services and GPU allocation
 

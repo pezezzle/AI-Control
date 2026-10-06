@@ -40,7 +40,7 @@ npm ci
 .\Start-App.cmd
 ```
 
-`Build.ps1` compiles `web/app.ts` into generated `src/AIControl.Host/Web/app.js`, builds the host, and optionally runs checks and publishes to `artifacts/app`. Keep that entire folder together. Package versions are recorded in `package-lock.json` and the NuGet lock file.
+`Build.ps1` compiles `web/*.ts` into generated JavaScript under `src/AIControl.Host/Web`, builds the host, and optionally runs checks and publishes to `artifacts/app`. Keep that entire folder together. Package versions are recorded in `package-lock.json` and the NuGet lock file.
 
 The shortcut installer creates **AI Control** on the current user's desktop and updates **ComfyUI Control** if that older shortcut exists. Both launch `artifacts/app/AIControl.exe`.
 
@@ -57,9 +57,12 @@ Both servers must be stopped to change installation paths, ports, context size, 
 | `src/AIControl.Core` | Configuration, HTTP status queries, workload protection, and launcher interface |
 | `src/AIControl.Host` | WPF window, WebView2, restricted command bridge, and service scripts |
 | `web/app.ts` | TypeScript interface logic |
+| `web/assistant.ts` | Chat, file reviews, image attachments and microphone recording |
 | `src/AIControl.Host/Web` | HTML, CSS, icon, and generated JavaScript |
 | `tests` | C# checks, process identity checks, and browser tests |
 | `legacy/ComfyUIControl` | Retained original WPF controller |
 | `docs` | Setup, architecture, and verification details |
 
 Model weights, server runtimes, projects, logs, credentials, and build outputs remain outside Git. No editor extension is installed automatically; use the API details in the README to connect a compatible coding assistant.
+
+For workspace permissions, global instructions, image projectors, local Whisper paths and custom context configuration, see [Assistant setup](ASSISTANT.md). Speech and vision components are optional external installations; they are not included in application build artifacts.

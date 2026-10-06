@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$InstallDirectory,
     [Parameter(Mandatory)][ValidateRange(1024,65535)][int]$Port,
     [string]$Model = 'qwen2.5-coder-14b-instruct.gguf',
-    [ValidateRange(2048,131072)][int]$ContextSize = 32768,
+    [ValidateRange(2048,1048576)][int]$ContextSize = 32768,
+    [string]$Projector = '',
     [ValidatePattern('^(auto|all|[0-9]{1,3})$')][string]$GpuLayers = 'auto'
 )
 $ErrorActionPreference = 'Stop'
@@ -40,6 +41,12 @@ if (-not $serverProcess) {
         if (-not (Test-Path -LiteralPath $modelPath -PathType Leaf)) { throw ('Model missing: ' + $Model) }
         $env:PATH = (Split-Path -Parent $serverExe) + ';' + $env:PATH
         $arguments = @('-m', ('"' + $modelPath + '"'), '--alias','local-coder','--host','127.0.0.1','--port',[string]$Port,'--ctx-size',[string]$ContextSize,'--n-gpu-layers',$GpuLayers,'--fit-target','1536','--parallel','1','--slots','--metrics','--jinja')
+        if ($Projector) {
+            $visionRoot = [IO.Path]::GetFullPath((Join-Path $installRoot 'models\vision'))
+            $projectorPath = [IO.Path]::GetFullPath($Projector)
+            if (-not $projectorPath.StartsWith($visionRoot + '\',[StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $projectorPath -PathType Leaf)) { throw 'Invalid or missing vision component.' }
+            $arguments += @('--mmproj',('"' + $projectorPath + '"'))
+        }
     }
     $started = Start-Process -FilePath $serverExe -ArgumentList $arguments -WorkingDirectory $installRoot -WindowStyle Hidden -RedirectStandardOutput (Join-Path $logFolder 'server.out.log') -RedirectStandardError (Join-Path $logFolder 'server.err.log') -PassThru
     $serverProcess = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $started.Id)

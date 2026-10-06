@@ -12,6 +12,8 @@ public sealed record ServiceDefinition
     public string Model { get; init; } = "qwen2.5-coder-14b-instruct.gguf";
     public int ContextSize { get; init; } = 32768;
     public string GpuLayers { get; init; } = "auto";
+    public bool VisionEnabled { get; init; } = true;
+    [JsonIgnore] public string ProjectorPath => Path.Combine(Root, "models", "vision", Path.GetFileNameWithoutExtension(Model) + ".mmproj.gguf");
     [JsonIgnore] public string Id => Kind == ServiceKind.ComfyUI ? "comfy" : "coding";
     [JsonIgnore] public string Name => Kind == ServiceKind.ComfyUI ? "ComfyUI" : "Coding server";
     [JsonIgnore] public string Url => $"http://127.0.0.1:{Port}";
@@ -26,19 +28,21 @@ public sealed record ServiceDefinition
         if (!Path.IsPathFullyQualified(expanded)) throw new InvalidDataException("Choose an absolute installation path.");
         if (Kind == ServiceKind.Llama && (string.IsNullOrWhiteSpace(Model) || Model != Path.GetFileName(Model) || Model.Contains('\\') || Model.Contains('/') || !Model.EndsWith(".gguf", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidDataException("Choose a GGUF file from the model folder.");
-        if (ContextSize is < 2048 or > 131072) throw new InvalidDataException("Invalid context size.");
+        if (ContextSize is < 2048 or > 1048576) throw new InvalidDataException("Context size must be between 2,048 and 1,048,576 tokens.");
         if (GpuLayers != "auto" && GpuLayers != "all" && (!int.TryParse(GpuLayers, out var count) || count is < 0 or > 999))
             throw new InvalidDataException("Invalid GPU allocation.");
     }
 }
 public sealed record ControlSettings
 {
+    public AssistantSettings Assistant { get; init; } = new();
     public ServiceDefinition ComfyUI { get; init; } = new() { Kind = ServiceKind.ComfyUI, InstallDirectory = @"%USERPROFILE%\Coding\ComfyUI", Port = 8188 };
     public ServiceDefinition Coding { get; init; } = new() { Kind = ServiceKind.Llama, InstallDirectory = @"%USERPROFILE%\Coding\LocalAI-Worker", Port = 8080 };
     public string ProjectDirectory { get; init; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Coding");
     public void Validate()
     {
         ComfyUI.Validate(); Coding.Validate();
+        Assistant.Validate();
         if (ComfyUI.Kind != ServiceKind.ComfyUI || Coding.Kind != ServiceKind.Llama || ComfyUI.Port == Coding.Port)
             throw new InvalidDataException("The two servers require distinct service types and ports.");
         if (!Path.IsPathFullyQualified(ProjectDirectory)) throw new InvalidDataException("Choose an absolute project path.");

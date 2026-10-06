@@ -2,6 +2,10 @@ using AIControl;
 using System.Net;
 using System.Net.Sockets;
 
+if (args.Length == 2 && args[0] == "--assistant-smoke") { await AssistantLiveChecks.Run(args[1]); return; }
+if (args.Length == 2 && args[0] == "--speech-smoke") { await AssistantLiveChecks.Speech(args[1]); return; }
+if (args.Length == 2 && args[0] == "--assistant-recovery-smoke") { await AssistantLiveChecks.Recovery(args[1]); return; }
+
 if (args.Length == 2 && args[0] == "--smoke-cpu-port")
 {
     var definitionForTest = new ControlSettings().Coding with { Port = int.Parse(args[1]), Model = "qwen2.5-coder-7b-instruct.gguf", ContextSize = 2048, GpuLayers = "0" };
@@ -105,12 +109,13 @@ Reject(() => (new ControlSettings() with { Coding = llama with { Port = 8188 } }
 var temporary = Path.Combine(Path.GetTempPath(), "AIControl-check-" + Guid.NewGuid().ToString("N") + ".json");
 try
 {
-    var original = new ControlSettings() with { Coding = llama with { ContextSize = 16384, Model = "qwen2.5-coder-32b-instruct.gguf" } };
+    var original = new ControlSettings() with { Coding = llama with { ContextSize = 24576, Model = "qwen2.5-coder-32b-instruct.gguf", VisionEnabled=false }, Assistant=new(){Access=WorkspaceAccess.ReadWrite,AllowScriptExecution=true,SyncContinueContext=false} };
     SettingsStore.Save(original, temporary); var restored = SettingsStore.Load(temporary);
     Check(restored == original, "Settings survive atomic save and reload");
     Check(!File.ReadAllText(temporary).Contains("logDirectory"), "Computed runtime paths are not persisted");
     File.WriteAllText(temporary, "null"); Reject(() => SettingsStore.Load(temporary), "Empty config rejected");
 } finally { File.Delete(temporary); }
+await AssistantChecks.Run(Check,Reject);
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class Scripts : IScriptRunner

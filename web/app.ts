@@ -1,9 +1,10 @@
 type ServiceId = 'comfy' | 'coding';
 type ServerState = 'Offline'|'Running'|'Busy'|'UnknownQueue'|'Loading'|'Unreachable'|'Foreign';
-interface Definition { kind:string; installDirectory:string; port:number; model:string; contextSize:number; gpuLayers:string }
-interface Settings { comfyUI:Definition; coding:Definition; projectDirectory:string }
+interface Definition { kind:string; installDirectory:string; port:number; model:string; contextSize:number; gpuLayers:string; visionEnabled?:boolean }
+interface AssistantOptions { access:'ReadOnly'|'ReadWrite'; allowScriptExecution:boolean; syncContinueContext:boolean; speechExecutable:string; speechModel:string }
+interface Settings { comfyUI:Definition; coding:Definition; projectDirectory:string; assistant?:AssistantOptions }
 interface Service { id:ServiceId; name:string; url:string; state:ServerState; running:number; pending:number; loadedModel:string|null; healthy:boolean; queueKnown:boolean; operating:boolean; starting:boolean; stopScheduled:boolean; error:string; models:string[] }
-interface Snapshot { type:'snapshot'; settings:Settings; services:Service[]; notice:string }
+interface Snapshot { type:'snapshot'; settings:Settings; services:Service[]; notice:string; globalRulesPath?:string; chatBusy?:boolean }
 interface WebBridge { postMessage(message:unknown):void; addEventListener(type:'message',listener:(event:{data:any})=>void):void }
 const bridge = (window as unknown as {chrome?:{webview?:WebBridge}}).chrome?.webview;
 const element = <T extends HTMLElement>(id:string):T => document.getElementById(id) as T;
@@ -55,8 +56,12 @@ function render():void {
   element<HTMLInputElement>('comfy-port').value=String(state.settings.comfyUI.port);
   element<HTMLInputElement>('coding-root').value=state.settings.coding.installDirectory;
   element<HTMLInputElement>('coding-port').value=String(state.settings.coding.port);
-  element<HTMLSelectElement>('context').value=String(state.settings.coding.contextSize);
+  element<HTMLInputElement>('context').value=String(state.settings.coding.contextSize);
   element<HTMLSelectElement>('gpu').value=state.settings.coding.gpuLayers;
+  element<HTMLInputElement>('vision-enabled').checked=state.settings.coding.visionEnabled??true;
+  element<HTMLInputElement>('sync-continue').checked=state.settings.assistant?.syncContinueContext??true;
+  element<HTMLInputElement>('speech-executable').value=state.settings.assistant?.speechExecutable??'%USERPROFILE%\\Coding\\LocalAI-Worker\\speech\\runtime-b5454\\Release\\whisper-cli.exe';
+  element<HTMLInputElement>('speech-model').value=state.settings.assistant?.speechModel??'%USERPROFILE%\\Coding\\LocalAI-Worker\\speech\\models\\ggml-small.bin';
  }
 }
 document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(button=>button.addEventListener('click',()=>{
@@ -93,7 +98,8 @@ element('settings-form').addEventListener('submit',event=>{
  event.preventDefault();if(!state)return;
  const updated:Settings={...state.settings,
   comfyUI:{...state.settings.comfyUI,installDirectory:element<HTMLInputElement>('comfy-root').value,port:Number(element<HTMLInputElement>('comfy-port').value)},
-  coding:{...state.settings.coding,installDirectory:element<HTMLInputElement>('coding-root').value,port:Number(element<HTMLInputElement>('coding-port').value),contextSize:Number(element<HTMLSelectElement>('context').value),gpuLayers:element<HTMLSelectElement>('gpu').value}};
+  coding:{...state.settings.coding,installDirectory:element<HTMLInputElement>('coding-root').value,port:Number(element<HTMLInputElement>('coding-port').value),contextSize:Number(element<HTMLInputElement>('context').value),gpuLayers:element<HTMLSelectElement>('gpu').value,visionEnabled:element<HTMLInputElement>('vision-enabled').checked},
+  assistant:{access:state.settings.assistant?.access??'ReadOnly',allowScriptExecution:state.settings.assistant?.allowScriptExecution??false,syncContinueContext:element<HTMLInputElement>('sync-continue').checked,speechExecutable:element<HTMLInputElement>('speech-executable').value,speechModel:element<HTMLInputElement>('speech-model').value}};
  send('saveSettings',{settings:updated});
 });
 bridge?.addEventListener('message',event=>{

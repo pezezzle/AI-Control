@@ -12,6 +12,10 @@ The configured installation folders must be trusted: starting a service executes
 
 ## Local data
 
+The built-in Assistant exposes a small allowlist of workspace tools. File operations reject paths outside the selected root and linked paths, and changes require explicit review. Read-only mode rejects write calls even if a model requests them. All model text, tool output and rule paths are rendered as text. Rule files are instructions, not an authorization mechanism.
+
+Optional PowerShell script execution is **not sandboxed**: it runs with the current user's Windows access, with a two-minute timeout and separate approval of the complete script. Do not enable or approve this for untrusted scripts. The external server UI has no access to these host tools. Speech executable and model paths must point to trusted local files. Microphone permission is granted only to the bundled UI after a user confirmation; service pages cannot request it through the host.
+
 Settings, logs, process metadata, and the embedded browser profile remain under `%LOCALAPPDATA%\AIControl`. Service pages can save their own chat and workflow data in that browser profile or their installation folders. Logs and screenshots may reveal paths, prompts, or project details; review them before sharing.
 
 Do not commit tokens, `.env` files, certificates, local settings, models, or generated outputs. The repository's ignore rules help prevent common accidental inclusions but cannot identify every secret.

@@ -23,6 +23,11 @@ public sealed class ScriptRunner : IScriptRunner
         var script = Path.Combine(AppContext.BaseDirectory, "scripts", "Control-Service.ps1");
         if (!File.Exists(script)) throw new FileNotFoundException("The control script is missing.", script);
         if (!Directory.Exists(service.Root)) throw new DirectoryNotFoundException("The installation folder was not found.");
+        if (start && service.Kind == ServiceKind.Llama)
+        {
+            var limit = ModelMetadata.ContextLimit(Path.Combine(service.Root,"models",service.Model));
+            if (limit is not null && service.ContextSize > limit) throw new InvalidDataException($"This model supports at most {limit:N0} context tokens.");
+        }
         var info = new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe"),
@@ -32,6 +37,8 @@ public sealed class ScriptRunner : IScriptRunner
         foreach (var value in new[] { "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script, "-Action", start ? "Start" : "Stop",
             "-Kind", service.Kind.ToString(), "-InstallDirectory", service.Root, "-Port", service.Port.ToString(CultureInfo.InvariantCulture),
             "-Model", service.Model, "-ContextSize", service.ContextSize.ToString(CultureInfo.InvariantCulture), "-GpuLayers", service.GpuLayers }) info.ArgumentList.Add(value);
+        if (service.Kind == ServiceKind.Llama && service.VisionEnabled && File.Exists(service.ProjectorPath))
+        { info.ArgumentList.Add("-Projector"); info.ArgumentList.Add(service.ProjectorPath); }
         using var process = Process.Start(info) ?? throw new InvalidOperationException("The server controller could not start.");
         using var reading = new CancellationTokenSource();
         var stdout = process.StandardOutput.ReadToEndAsync(reading.Token); var stderr = process.StandardError.ReadToEndAsync(reading.Token);
