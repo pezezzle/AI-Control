@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'"><title>AI Control</title><link rel="stylesheet" href="style.css"><script defer src="app.js"></script></head>
+<body>
+ <header class="topbar"><div class="brand"><img src="icon.svg" alt="" width="34" height="34"><span>AI Control</span><span class="version">0.2</span></div><span class="local"><i></i> Lokal auf deinem PC</span></header>
+ <aside class="sidebar"><div class="nav-label">DEINE KI-UMGEBUNG</div><nav aria-label="Bereiche">
+  <button class="nav-item active" data-page="overview"><span>▦</span> Übersicht</button>
+  <button class="nav-item" data-page="comfy"><span>◈</span> Bild &amp; Video</button>
+  <button class="nav-item" data-page="coding"><span>⌘</span> Coding</button>
+  <button class="nav-item" data-page="settings"><span>⚙</span> Einstellungen</button>
+ </nav><div class="sidebar-bottom"><p>Eine Steuerung.<br>Deine lokalen Modelle.</p><button class="text-button" id="repository">Quellcode-Ordner öffnen ↗</button></div></aside>
+ <main>
+  <div id="notice" role="alert" class="notice" hidden></div>
+  <section id="page-overview" class="page"><div class="heading"><div><p class="eyebrow">ALLES IM BLICK</p><h1>Deine KI, unter Kontrolle.</h1><p class="intro">Starte den Dienst, den du gerade brauchst.</p></div><span class="pill" id="server-count">Status wird geprüft</span></div>
+   <div class="service-grid" id="overview-cards"></div>
+   <div class="gpu-note"><span class="note-icon">↔</span><div><strong>Ein Dienst zur Zeit, volle GPU-Leistung.</strong><p>Beende beim Wechsel zuerst den anderen Server. Laufende Aufträge kannst du vorher fertigstellen lassen.</p></div></div>
+   <div class="bottom-note"><span>✓</span> Fenster schließen lässt deine Server weiterlaufen.</div>
+  </section>
+  <section id="page-comfy" class="page" hidden><div class="heading"><div><p class="eyebrow">BILD &amp; VIDEO</p><h1>ComfyUI</h1><p class="intro">Deine Workflows, Bildmodelle und Videos mit Ton.</p></div></div><div id="comfy-card" class="detail-card"></div><div class="info-panel"><h2>Direkt hier arbeiten</h2><p>Mit „In der App öffnen“ erscheint deine ComfyUI-Oberfläche in diesem Fenster. Über „Im Browser öffnen“ kannst du weiterhin Chrome oder deinen Standardbrowser nutzen.</p></div></section>
+  <section id="page-coding" class="page" hidden><div class="heading"><div><p class="eyebrow">CODING</p><h1>Dein lokaler Coding-Server.</h1><p class="intro">Modell starten, im Chat ausprobieren oder deinen Editor öffnen.</p></div></div><div id="coding-card" class="detail-card"></div>
+   <div class="editor-panel"><div><h2>Dein Coding-Projekt</h2><p id="project-path" class="path"></p></div><div class="actions"><button class="secondary" id="project">Projekt auswählen</button><button class="primary" id="editor">In VS Code öffnen ↗</button></div></div>
+   <details class="connection"><summary>Anbindung für Coding-Assistenten</summary><p>Cline oder ein anderer Editor-Assistent verbindet sich über „OpenAI Compatible“ mit diesem Server. Diese App steuert den Server und öffnet den Editor; die Codebearbeitung findet im Editor statt.</p><dl><dt>API-Adresse</dt><dd id="api-address"></dd><dt>Modell-ID</dt><dd>local-coder</dd></dl><button class="text-button" id="copy-api">API-Adresse kopieren</button></details>
+  </section>
+  <section id="page-settings" class="page" hidden><div class="heading"><div><p class="eyebrow">EINSTELLUNGEN</p><h1>Deine Installationen.</h1><p class="intro">Zum Ändern der Server-Einstellungen müssen beide Dienste gestoppt sein.</p></div></div>
+   <form id="settings-form" class="settings-panel">
+    <h2>ComfyUI</h2><label for="comfy-root">Installationsordner</label><div class="field-row"><input id="comfy-root" required><button type="button" class="secondary browse" data-field="comfy">Auswählen</button></div><label for="comfy-port">Port</label><input id="comfy-port" type="number" min="1024" max="65535" required>
+    <h2>Coding-Server · llama.cpp</h2><label for="coding-root">Installationsordner</label><div class="field-row"><input id="coding-root" required><button type="button" class="secondary browse" data-field="coding">Auswählen</button></div><label for="coding-port">Port</label><input id="coding-port" type="number" min="1024" max="65535" required>
+    <div class="settings-columns"><div><label for="context">Kontextgröße</label><select id="context"><option value="8192">8.192 Tokens</option><option value="16384">16.384 Tokens</option><option value="32768">32.768 Tokens</option><option value="65536">65.536 Tokens</option></select></div><div><label for="gpu">GPU-Zuteilung</label><select id="gpu"><option value="auto">Automatisch · empfohlen</option><option value="all">Alle Modellschichten auf der GPU</option><option value="32">32 Modellschichten auf der GPU</option><option value="0">Nur CPU</option></select></div></div>
+    <p class="hint">Automatisch nutzt den verfügbaren Grafikspeicher und lagert bei größeren Modellen einen Teil in den Arbeitsspeicher aus.</p><div class="settings-actions"><span id="settings-result" role="status"></span><button class="primary" type="submit">Einstellungen speichern</button></div>
+   </form>
+  </section>
+ </main>
+ <dialog id="stop-dialog"><form method="dialog"><p class="eyebrow">SERVER BEENDEN</p><h2 id="stop-title">Aufträge fertigstellen?</h2><p id="stop-detail"></p><button id="stop-wait" value="wait" class="primary">Nach allen Aufträgen beenden</button><button id="stop-force" value="force" class="danger">Sofort beenden und abbrechen</button><button value="cancel" class="secondary">Abbrechen</button></form></dialog>
+</body></html>

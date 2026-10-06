@@ -1,0 +1,1 @@
+module.exports={testDir:'tests/interface',use:{channel:'chrome',headless:true,viewport:{width:1120,height:740}},webServer:{command:'node tools/preview.cjs',url:'http://127.0.0.1:17881',reuseExistingServer:false},reporter:'list'};

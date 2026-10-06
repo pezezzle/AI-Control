@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1d324f"/><stop offset="1" stop-color="#101827"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#56e4e9"/><stop offset=".55" stop-color="#54a9ff"/><stop offset="1" stop-color="#9275ff"/>
+    </linearGradient>
+    <linearGradient id="play" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c4f4ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="58" fill="url(#tile)"/>
+  <rect x="10" y="10" width="236" height="236" rx="56" fill="none" stroke="#435a78" stroke-opacity=".65" stroke-width="3"/>
+  <path d="M66 76 H91 Q105 76 105 92 V99 M66 180 H91 Q105 180 105 164 V157 M157 128 H188" fill="none" stroke="url(#signal)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="40" y="54" width="44" height="44" rx="13" fill="#5cdde7"/>
+  <rect x="40" y="158" width="44" height="44" rx="13" fill="#729cff"/>
+  <rect x="170" y="106" width="44" height="44" rx="13" fill="#a08aff"/>
+  <rect x="87" y="85" width="86" height="86" rx="26" fill="url(#signal)"/>
+  <rect x="91" y="89" width="78" height="78" rx="23" fill="#14273f"/>
+  <path d="M116 110 Q116 105 121 108 L146 123 Q153 128 146 133 L121 148 Q116 151 116 146 Z" fill="url(#play)"/>
+  <rect x="54" y="68" width="16" height="16" rx="5" fill="#173654"/>
+  <rect x="54" y="172" width="16" height="16" rx="5" fill="#1c2b51"/>
+  <rect x="184" y="120" width="16" height="16" rx="5" fill="#2a2450"/>
+</svg>

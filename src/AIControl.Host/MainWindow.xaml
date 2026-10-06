@@ -1,0 +1,15 @@
+<Window x:Class="AIControl.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+ Title="AI Control" Width="1120" Height="780" MinWidth="920" MinHeight="650" WindowStartupLocation="CenterScreen" Background="#0c1420" Icon="Assets/ComfyUI-Control.ico">
+ <Grid>
+  <wv:WebView2 x:Name="Shell" DefaultBackgroundColor="#0c1420"/>
+  <Border x:Name="Workspace" Visibility="Collapsed" Background="#0c1420">
+   <Grid><Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <Grid Margin="15,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock x:Name="WorkspaceTitle" Foreground="#d8e6f5" VerticalAlignment="Center" FontSize="14"/>
+     <Button Content="Zur Übersicht" Click="Back_Click" Grid.Column="1" Padding="14,3" Background="#23334c" Foreground="White" BorderThickness="0" Cursor="Hand"/>
+    </Grid>
+    <wv:WebView2 x:Name="ServiceView" Grid.Row="1" DefaultBackgroundColor="#0c1420"/>
+   </Grid>
+  </Border>
+ </Grid>
+</Window>
