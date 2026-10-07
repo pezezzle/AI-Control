@@ -80,6 +80,18 @@ internal static class AssistantChecks
             handler=new ChatBackend([Call("read_file",new{path="../outside.txt"}),Answer("Blocked.")]);
             using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Inspect.",[],(_,_)=>Task.FromResult(false),(_,_)=>{},CancellationToken.None);
             check(handler.Requests[1].Contains("outside the selected workspace"),"Model traversal call blocked and reported");
+            handler=new ChatBackend([Call("read_file",new{path=global}),Answer("Global rules received.")]);events.Clear();
+            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options with{Assistant=new()},"Inspect synthetic rules.",[],(_,_)=>throw new Exception("Unexpected approval"),(kind,value)=>events.Add(kind+":"+value),CancellationToken.None);
+            check(handler.Requests[0].Contains("already loaded the AGENTS.md")&&handler.Requests[1].Contains("no workspace change is required")&&handler.Requests[1].Contains("Global test rules: no secrets.")&&!events.Any(e=>e.Contains("Tool error")),"Exact global rules read succeeds in read-only mode without changing workspace");
+            File.WriteAllText(global,"Updated mandatory global test rules.");handler=new ChatBackend([Call("read_file",new{path=global}),Answer("Updated rules received.")]);
+            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Inspect synthetic rules.",[],(_,_)=>throw new Exception("Unexpected approval"),(_,_)=>{},CancellationToken.None);
+            check(handler.Requests[1].Contains("Updated mandatory global test rules."),"Global rules tool read reloads the authoritative file rather than a stale copy");
+            var nearby=Path.Combine(temp,"nearby.txt");File.WriteAllText(nearby,"External synthetic data must stay blocked.");handler=new ChatBackend([Call("read_file",new{path=nearby}),Answer("Blocked.")]);
+            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Inspect synthetic boundary.",[],(_,_)=>Task.FromResult(false),(_,_)=>{},CancellationToken.None);
+            check(handler.Requests[1].Contains("outside the selected workspace")&&!handler.Requests[1].Contains("External synthetic data must stay blocked."),"Global rules exception cannot read a neighboring external file");
+            handler=new ChatBackend([Call("write_file",new{path=global,content="Must not overwrite global rules."}),Answer("Blocked.")]);
+            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Check synthetic write boundary.",[],(_,_)=>throw new Exception("Unexpected approval"),(_,_)=>{},CancellationToken.None);
+            check(handler.Requests[1].Contains("outside the selected workspace")&&File.ReadAllText(global)=="Updated mandatory global test rules.","Global rules read exception never authorizes an external write");
             handler=new ChatBackend(["data: {bad}\n\n"]);bool malformed=false;
             using(var chat=new AssistantChat(new HttpClient(handler),global))try{await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(_,_)=>{},CancellationToken.None);}catch(JsonException){malformed=true;}
             check(malformed,"Malformed server stream fails without tool execution");
@@ -89,9 +101,9 @@ internal static class AssistantChecks
             handler=new ChatBackend([thinking+Answer("Done.")]);events.Clear();
             using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(kind,value)=>events.Add(kind+":"+JsonSerializer.Serialize(value)),CancellationToken.None);
             check(events.Any(x=>x.StartsWith("chatProgress:")&&x.Contains("\"phase\":\"thinking\"")&&x.Contains("\"reasoningCharacters\":18"))&&!events.Any(x=>x.Contains("Synthetic thinking")),"Reasoning progress is visible without exposing raw thought text");
-            handler=new ChatBackend([thinking+"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n"]);string budgetError="";
-            using(var chat=new AssistantChat(new HttpClient(handler),global))try{await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(_,_)=>{},CancellationToken.None);}catch(InvalidDataException ex){budgetError=ex.Message;}
-            check(budgetError.Contains("while thinking")&&budgetError.Contains("no final answer"),"Reasoning-only budget exhaustion is explained accurately");
+            handler=new ChatBackend([thinking+"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"]);events.Clear();
+            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(kind,value)=>events.Add(kind+":"+value),CancellationToken.None);
+            check(events.Any(e=>e.StartsWith("chatIncomplete")&&e.Contains("while thinking")&&e.Contains("no final answer")),"Reasoning-only budget exhaustion is explained accurately");
         }
         finally{Directory.Delete(temp,true);}
     }
@@ -104,6 +116,10 @@ internal static class AssistantChecks
     {
         readonly Queue<string> queue=new(responses);public List<string> Requests=[];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)
-        {Requests.Add(await request.Content!.ReadAsStringAsync(token));return new(HttpStatusCode.OK){Content=new StringContent(queue.Dequeue(),System.Text.Encoding.UTF8,"text/event-stream")};}
+        {
+         if(request.RequestUri!.AbsolutePath=="/props")return new(HttpStatusCode.OK){Content=new StringContent("{\"default_generation_settings\":{\"n_ctx\":16384}}")};
+         if(request.RequestUri.AbsolutePath=="/apply-template")return new(HttpStatusCode.OK){Content=new StringContent("{\"prompt\":\"synthetic template\"}")};
+         if(request.RequestUri.AbsolutePath=="/tokenize")return new(HttpStatusCode.OK){Content=new StringContent("{\"tokens\":[1,2,3]}")};
+         Requests.Add(await request.Content!.ReadAsStringAsync(token));return new(HttpStatusCode.OK){Content=new StringContent(queue.Dequeue(),System.Text.Encoding.UTF8,"text/event-stream")};}
     }
 }

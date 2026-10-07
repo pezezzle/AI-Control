@@ -19,11 +19,11 @@ public partial class MainWindow : Window
     private string notice = "";
     public MainWindow(ControlSettings initial)
     {
-        InitializeComponent(); settings = initial; AgentRules.EnsureGlobal(); ReplaceServices();
+        InitializeComponent(); settings = initial; AgentRules.EnsureGlobal(); InitializeChats(); ReplaceServices();
         Loaded += async (_, _) => await InitializeAsync();
         timer.Tick += async (_, _) => await RefreshAsync();
         Closing += OnClosing;
-        Closed += (_, _) => { closed = true; chatCancellation?.Cancel(); speechCancellation?.Cancel(); pendingReview?.TrySetResult(false); timer.Stop(); Shell.Dispose(); ServiceView.Dispose(); foreach (var service in services.Values) service.Control.Dispose(); assistant.Dispose(); };
+        Closed += (_, _) => { closed = true; chatCancellation?.Cancel(); speechCancellation?.Cancel(); pendingReview?.TrySetResult(false); timer.Stop(); Shell.Dispose(); ServiceView.Dispose(); foreach (var service in services.Values) service.Control.Dispose(); CloseChats(); };
     }
     private void ReplaceServices()
     {
@@ -74,7 +74,7 @@ public partial class MainWindow : Window
         if (!ready || closed || Shell.CoreWebView2 is null) return;
         var snapshot = new
         {
-            type = "snapshot", settings, notice, globalRulesPath = AgentRules.GlobalPath, chatBusy,
+            type = "snapshot", settings = settings with{ProjectDirectory=CurrentChat.Data.Workspace}, notice, globalRulesPath = AgentRules.GlobalPath, chatBusy,
             services = services.Values.Select(s => new
             {
                 id = s.Definition.Id, name = s.Definition.Name, url = s.Definition.Url,
@@ -95,7 +95,7 @@ public partial class MainWindow : Window
             if (e.WebMessageAsJson.Length > 30_000_000) throw new InvalidDataException("The request is too large.");
             using var document = JsonDocument.Parse(e.WebMessageAsJson); var root = document.RootElement;
             var type = root.GetProperty("type").GetString(); notice = "";
-            if (type == "ready") { ready = true; SendSnapshot(); return; }
+            if (type == "ready") { ready = true; SendSnapshot(); SendChats(); return; }
             if (await HandleAssistantAsync(root)) return;
             if (type == "saveSettings")
             {
@@ -116,7 +116,7 @@ public partial class MainWindow : Window
             {
                 if (chatBusy) throw new InvalidOperationException("Finish or cancel the current chat before changing its workspace.");
                 var dialog = new OpenFolderDialog { Title = "Choose coding project", InitialDirectory = settings.ProjectDirectory };
-                if (dialog.ShowDialog(this) == true) { settings = settings with { ProjectDirectory = dialog.FolderName }; SettingsStore.Save(settings); assistant.Clear(); Send(new {type="chatCleared"}); SendSnapshot(); } return;
+                if (dialog.ShowDialog(this) == true) { settings = settings with { ProjectDirectory = dialog.FolderName }; SettingsStore.Save(settings); ChooseChatWorkspace(dialog.FolderName); SendSnapshot(); } return;
             }
             if (type == "openEditor") { OpenEditor(); return; }
             if (type == "copyApi") { Clipboard.SetText(settings.Coding.Url + "/v1"); Send(new { type = "apiCopied" }); return; }
@@ -127,7 +127,7 @@ public partial class MainWindow : Window
                 var model = root.GetProperty("model").GetString() ?? "";
                 if (!settings.Coding.ListModels().Contains(model, StringComparer.OrdinalIgnoreCase)) throw new InvalidDataException("The model was not found in the model folder.");
                 settings = settings with { Coding = settings.Coding with { Model = model } }; SettingsStore.Save(settings);
-                coding.Control.Dispose(); services["coding"] = new(settings.Coding); await RefreshAsync(); return;
+                ChooseChatModel(model); coding.Control.Dispose(); services["coding"] = new(settings.Coding); await RefreshAsync(); return;
             }
             if (type == "openRepository") { OpenPath(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", ".."))); return; }
             if (type == "back") { HideWorkspace(); return; }
@@ -195,10 +195,11 @@ public partial class MainWindow : Window
     private static void OpenPath(string value) => Process.Start(new ProcessStartInfo(value) { UseShellExecute = true });
     private void OpenEditor()
     {
-        if (!Directory.Exists(settings.ProjectDirectory)) throw new DirectoryNotFoundException("The selected project folder is missing.");
+        var editorWorkspace=CurrentChat.Data.Workspace;
+        if (!Directory.Exists(editorWorkspace)) throw new DirectoryNotFoundException("The selected project folder is missing.");
         var candidates = new[] { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Microsoft VS Code", "Code.exe"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Microsoft VS Code", "Code.exe") };
         var executable = candidates.FirstOrDefault(File.Exists) ?? throw new FileNotFoundException("VS Code was not found.");
-        Process.Start(new ProcessStartInfo(executable) { UseShellExecute = false, ArgumentList = { settings.ProjectDirectory } });
+        Process.Start(new ProcessStartInfo(executable) { UseShellExecute = false, ArgumentList = { editorWorkspace } });
     }
     private static void OpenLog(LiveService service)
     {

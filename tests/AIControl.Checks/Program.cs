@@ -2,6 +2,14 @@ using AIControl;
 using System.Net;
 using System.Net.Sockets;
 
+if(args.Length==1&&args[0]=="--settings-summary")
+{
+    var localSettings=SettingsStore.Load();
+    Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{path=SettingsStore.SettingsPath,model=localSettings.Coding.Model,context=localSettings.Coding.ContextSize,project=localSettings.ProjectDirectory},SettingsStore.Json));return;
+}
+
+if (args.Length == 2 && args[0] == "--sessions-smoke") { await SessionLiveChecks.Run(args[1]); return; }
+if (args.Length == 2 && args[0] == "--output-budget-smoke") { await SessionLiveChecks.OutputBudget(args[1]); return; }
 if (args.Length == 2 && args[0] == "--assistant-smoke") { await AssistantLiveChecks.Run(args[1]); return; }
 if (args.Length == 2 && args[0] == "--speech-smoke") { await AssistantLiveChecks.Speech(args[1]); return; }
 if (args.Length == 2 && args[0] == "--assistant-recovery-smoke") { await AssistantLiveChecks.Recovery(args[1]); return; }
@@ -116,6 +124,7 @@ try
     File.WriteAllText(temporary, "null"); Reject(() => SettingsStore.Load(temporary), "Empty config rejected");
 } finally { File.Delete(temporary); }
 await AssistantChecks.Run(Check,Reject);
+await SessionChecks.Run(Check,Reject);
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class Scripts : IScriptRunner

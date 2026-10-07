@@ -1,12 +1,30 @@
 # Build and test status
 
-Version 0.3.1 was tested on Windows with an RTX 4090 on October 6, 2026. The interface, documentation, host dialogs and launcher messages are in English.
+Version 0.4.3 was built and tested on Windows with an RTX 4090 on October 7, 2026. The interface, documentation, host dialogs and launcher messages are in English.
 
 ## Automated checks
 
-`Build.ps1 -Verify` builds without warnings or errors and runs 89 C# checks, six process identity checks, one lifecycle check with a real short-lived test process, and 14 browser tests: **110 checks in total**.
+`Build.ps1 -Verify` builds without warnings or errors and runs 125 C# checks, six process identity checks, one lifecycle check with a real short-lived test process, and 24 browser tests: **156 checks in total**.
 
 Coverage includes active and deferred jobs, unknown or malformed status responses, foreign processes, fresh workload checks before stopping, persisted permissions and custom context settings, model filenames, the command bridge, and the interface. Assistant checks cover mandatory global/project/directory instructions, path traversal and hard-link protection, denied and stale writes, tool permissions, malformed streams, image/audio validation and Continue configuration preservation. Browser tests cover streamed plain text, exact approval dialogs, image previews, transcript insertion, and microphone recording/resampling with simulated audio hardware. Browser tests use a simulated host bridge; they do not replace real service tests.
+
+Version 0.4.3 verifies a removed configured model remains visibly selected as missing instead of silently displaying the first installed model. Start is disabled until an installed model is explicitly selected and acknowledged by the host. The regression test verifies the model selection bridge command and the resulting enabled start state.
+
+The published 0.4.3 app started Huihui Qwen3.8 through its native Start button with 32,768 context tokens. `/props` confirmed the actual model filename and capacity; the selected empty chat displayed 790 / 32,768 tokens after refresh. A separate synthetic request with thinking disabled and a 16-token cap returned `MODEL_OK`; no user code was submitted. It is a functional startup check, not a throughput benchmark. The existing shortcut retains its stable installation target. Evidence is outside Git under `GPTPC/ai-control-model-start-20261007`.
+
+Version 0.4.2 covers an exact read-only exception for the configured global AGENTS.md: successful reads without changing workspace, freshly reloaded contents, blocked neighboring external files, and blocked external writes. Tests use synthetic rules and mocked model tool calls; no user prompt is replayed. The package was prepared separately under `artifacts/app-next` while the user's task ran. After the user canceled that task and requested the new version, the idle app was closed and a one-time helper backed up and replaced its package with SHA-256 verification. The native window now displays 0.4.2. The taskbar shortcut targets the same stable `artifacts/app/AIControl.exe` path. The coding server retained its existing process and remained running. Installation status, screenshots and local performance observations are outside Git under `GPTPC/ai-control-rules-fix-20261007`.
+
+## Version 0.4 sessions and context
+
+Synthetic session tests verify independent persistence, interrupted-task handling, preserved corrupt files, deletion recovery, complete tool-round validation, failed compaction rollback, retained recent turns and checkpoint restore without replay. Automatic mode triggers at 70%; Manual and Off never compact implicitly, and response reserves block overflow before inference. Browser checks cover drafts, queued cross-session requests, scoped streams/reviews/dictation, compaction controls and minimum-window layout.
+
+Version 0.4.1 adds regression checks for automatic output at 258,048 context tokens, custom budgets above the former 8,192 and half-context limits, legacy chat migration, storage beyond one million characters, long streamed answers, retained length-limited responses, and discarded incomplete tool proposals. A single large completed answer can be compacted before the next request while a checkpoint retains its exact original. Truncated summaries are rejected without changing working memory. Browser tests check automatic defaults, a 131,072-token custom setting, and partial-answer recovery.
+
+A read-only check against the user's already running Huihui server measured **688 input tokens / 258,048 active capacity**, leaving **257,104 automatic output tokens** after the safety margin. The same context accepted a **131,072-token custom budget**. This used a synthetic empty folder and rules, invoked only health/template/tokenizer APIs, and started no inference. It verifies measured budgeting, not the quality or speed of a 250,000-token generated answer. Evidence is outside the repository under `GPTPC/ai-control-output-budget-20261007`.
+
+The published 0.4.1 Windows app was visually checked with the existing empty chat: refresh measured **758 / 258,048** input tokens, and Automatic displayed **257,034** available output tokens. Selecting Custom exposed the numeric limit field; Automatic was restored afterward. The coding server remained running and idle, and existing conversations were preserved.
+
+The actual Huihui Qwen3.8 server (llama.cpp b11429, 16,384 active context tokens) counted a synthetic prompt using its template/tokenizer, supplied streamed usage, and answered a small synthetic request. Tool-free local summarization reduced a synthetic conversation from **5,289 to 853 tokens**. The checkpoint and original transcript survived a store reload. Evidence and fixtures are saved locally outside the repository under `GPTPC/ai-control-sessions-20261007`. The published Windows app also displayed separate saved chats, queued a second request while the first was running, and continued it after the first hit its output budget. The second answered `SESSION_TWO_OK`. Restoring the synthetic checkpoint retained the transcript, created a forward checkpoint and refreshed the count with current global rules. These are feature checks, not model-quality benchmarks.
 
 ## Version 0.3 local integration tests
 

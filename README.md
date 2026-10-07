@@ -7,13 +7,15 @@
 [![TypeScript 5.9](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Windows x64](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4)](docs/SETUP.md)
 
-A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.3.1**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
+A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.4.3**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
 
 **Project status:** The Windows build and automated server, assistant and interface checks pass. Real local tests cover Huihui Qwen3.8 file tools, reviewed file creation, image recognition and Whisper transcription. See [Build and test status](docs/VERIFIED.md) for the tested environment and limitations.
 
 ## Features
 
 - Service status, active and queued jobs, start/stop controls, logs, and installation folders.
+- Persistent separate chats with their own workspace, model and permissions, plus a serial request queue.
+- Measured context usage, automatic or custom output budgets, automatic/manual compaction and restorable checkpoints that preserve original transcripts.
 - ComfyUI embedded in the app and a built-in local assistant with streamed responses and cancelable tasks.
 - Workspace file listing, reading, search and reviewed writes; read-only access by default, with optional separately approved script execution.
 - Mandatory global `AGENTS.md`, project and directory rules, and a visible list of loaded instructions.
@@ -62,7 +64,7 @@ The default coding model is `qwen2.5-coder-14b-instruct.gguf`, with a 32,768-tok
 
 ## Privacy and security
 
-The controller starts services on loopback and does not require cloud API credentials. Settings, logs, process metadata, and the WebView2 profile stay under `%LOCALAPPDATA%\AIControl`. Model weights, runtimes, user projects, credentials, and generated outputs are excluded from the repository.
+The controller starts services on loopback and does not require cloud API credentials. Settings, saved chats and images, context checkpoints, logs, process metadata, and the WebView2 profile stay under `%LOCALAPPDATA%\AIControl`. Model weights, runtimes, user projects, credentials, and generated outputs are excluded from the repository.
 
 Bundled UI messages use a restricted command bridge. Embedded server pages cannot access that bridge. The stop script checks the configured executable and process identity before termination. Read [Security](SECURITY.md) before sharing diagnostics or exposing a server beyond the local PC.
 

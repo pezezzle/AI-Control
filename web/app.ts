@@ -31,10 +31,13 @@ function description(s:Service):{label:string;detail:string;color:string} {
 }
 function card(s:Service):string {
  const status=description(s),other=state?.services.find(o=>o.id!==s.id);
- const canStart=!s.operating&&!s.stopScheduled&&s.state==='Offline'&&other?.state==='Offline'&&!other.operating;
- const canStop=!s.operating&&s.state!=='Offline'&&s.state!=='Foreign';
  const selected=state?.settings.coding.model??'';
- const model=s.id==='coding'?`<label class="model-label" for="model-${page}">Model for the next start</label><select id="model-${page}" class="model-select" data-model ${s.state!=='Offline'||s.operating?'disabled':''}>${s.models.map(m=>`<option value="${escapeHtml(m)}" ${m===selected?'selected':''}>${escapeHtml(m)}</option>`).join('')}</select>`:'';
+ const installed=s.models.find(m=>m.toLowerCase()===selected.toLowerCase());
+ const modelMissing=s.id==='coding'&&!installed;
+ const canStart=!modelMissing&&!s.operating&&!s.stopScheduled&&s.state==='Offline'&&other?.state==='Offline'&&!other.operating;
+ const canStop=!s.operating&&s.state!=='Offline'&&s.state!=='Foreign';
+ const missingOption=modelMissing?`<option value="${escapeHtml(selected)}" selected disabled>${escapeHtml(selected?'Missing model: '+selected:'Select an installed model')}</option>`:'';
+ const model=s.id==='coding'?`<label class="model-label" for="model-${page}">Model for the next start</label><select id="model-${page}" class="model-select" data-model ${s.state!=='Offline'||s.operating?'disabled':''}>${missingOption}${s.models.map(m=>`<option value="${escapeHtml(m)}" ${m===installed?'selected':''}>${escapeHtml(m)}</option>`).join('')}</select>${modelMissing?'<p class="error" role="alert">The configured model is not installed. Select an installed model before starting.</p>':''}`:'';
  const tip=!canStart&&s.state==='Offline'&&other?.state!=='Offline'?` Stop ${other?.name??'the other server'} first.`:'';
  return `<article class="service-card" data-service="${s.id}"><div class="card-header"><span class="service-glyph ${s.id==='coding'?'coding-glyph':''}" aria-hidden="true">${s.id==='coding'?'&lt;/&gt;':'◈'}</span><div><h2>${escapeHtml(s.name)}</h2><p>${s.id==='comfy'?'Image & video generation':'Local language models · llama.cpp'}</p></div></div><p class="status"><span class="dot ${status.color}"></span>${status.label}</p><p class="detail">${escapeHtml(status.detail+tip)}</p>${model}${s.error?`<p class="error" role="alert">${escapeHtml(s.error)}</p>`:''}<div class="card-actions"><div class="actions"><button class="primary" data-action="start" ${canStart?'':'disabled'}>Start</button><button class="secondary" data-action="openWorkspace" ${s.healthy?'':'disabled'}>Open in app</button><button class="danger" data-action="${s.stopScheduled?'cancelStop':'stop'}" ${canStop?'':'disabled'}>${s.stopScheduled?'Cancel stop':'Stop'}</button></div><div class="card-footer"><button class="text-button" data-action="openBrowser" ${s.healthy?'':'disabled'}>Open in browser ↗</button><button class="text-button" data-action="openLog">Log</button><button class="text-button" data-action="openFolder">Folder</button></div></div></article>`;
 }
