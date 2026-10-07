@@ -8,6 +8,7 @@ if(args.Length==1&&args[0]=="--settings-summary")
     Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(new{path=SettingsStore.SettingsPath,model=localSettings.Coding.Model,context=localSettings.Coding.ContextSize,project=localSettings.ProjectDirectory},SettingsStore.Json));return;
 }
 
+if (args.Length == 2 && args[0] == "--template-smoke") { await TemplateChecks.RunLive(args[1]); return; }
 if (args.Length == 2 && args[0] == "--sessions-smoke") { await SessionLiveChecks.Run(args[1]); return; }
 if (args.Length == 2 && args[0] == "--output-budget-smoke") { await SessionLiveChecks.OutputBudget(args[1]); return; }
 if (args.Length == 2 && args[0] == "--assistant-smoke") { await AssistantLiveChecks.Run(args[1]); return; }
@@ -125,6 +126,9 @@ try
 } finally { File.Delete(temporary); }
 await AssistantChecks.Run(Check,Reject);
 await SessionChecks.Run(Check,Reject);
+await ContinuationChecks.Run(Check,Reject);
+await TemplateChecks.Run(Check);
+await WriteModeChecks.Run(Check,Reject);
 Console.WriteLine($"{checks} checks passed.");
 
 sealed class Scripts : IScriptRunner

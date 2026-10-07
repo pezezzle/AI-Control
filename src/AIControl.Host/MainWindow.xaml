@@ -1,14 +1,52 @@
 <Window x:Class="AIControl.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
- Title="AI Control" Width="1120" Height="780" MinWidth="920" MinHeight="650" WindowStartupLocation="CenterScreen" Background="#0c1420" Icon="Assets/ComfyUI-Control.ico">
- <Grid>
-  <wv:WebView2 x:Name="Shell" DefaultBackgroundColor="#0c1420"/>
-  <Border x:Name="Workspace" Visibility="Collapsed" Background="#0c1420">
+ Title="AI Control" Width="1120" Height="780" MinWidth="920" MinHeight="650" WindowStartupLocation="CenterScreen" Background="#181818" Icon="Assets/ComfyUI-Control.ico">
+ <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="DarkMenus.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
+ <Grid><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+  <DockPanel Background="#181818" LastChildFill="True">
+   <TextBlock DockPanel.Dock="Right" Text="AI Control · 0.4.6 · Local on your PC" Foreground="#909090" VerticalAlignment="Center" FontSize="11" Margin="12,0"/>
+   <Menu x:Name="AppMenu" IsEnabled="False" FontSize="13" BorderBrush="#303030" BorderThickness="0,0,0,1">
+    <MenuItem Header="_File">
+     <MenuItem Header="_New chat" Tag="newChat" InputGestureText="Ctrl+N" Click="Menu_Click"/>
+     <MenuItem Header="Choose _workspace…" Tag="chooseWorkspace" InputGestureText="Ctrl+Shift+O" Click="Menu_Click"/>
+     <MenuItem Header="Open workspace _folder" Tag="openWorkspaceFolder" Click="Menu_Click"/>
+     <MenuItem Header="Open in _VS Code" Tag="openEditor" Click="Menu_Click"/>
+     <Separator/><MenuItem Header="_Settings" Tag="settings" InputGestureText="Ctrl+," Click="Menu_Click"/>
+     <Separator/><MenuItem Header="E_xit" Tag="exit" InputGestureText="Alt+F4" Click="Menu_Click"/>
+    </MenuItem>
+    <MenuItem x:Name="EditMenu" Header="_Edit">
+     <MenuItem Header="_Undo" Tag="undo" InputGestureText="Ctrl+Z" Click="Menu_Click"/>
+     <MenuItem Header="_Redo" Tag="redo" InputGestureText="Ctrl+Shift+Z" Click="Menu_Click"/>
+     <Separator/><MenuItem Header="Cu_t" Tag="cut" InputGestureText="Ctrl+X" Click="Menu_Click"/>
+     <MenuItem Header="_Copy" Tag="copy" InputGestureText="Ctrl+C" Click="Menu_Click"/>
+     <MenuItem Header="_Paste" Tag="paste" InputGestureText="Ctrl+V" Click="Menu_Click"/>
+     <MenuItem Header="Select _all" Tag="selectAll" InputGestureText="Ctrl+A" Click="Menu_Click"/>
+    </MenuItem>
+    <MenuItem Header="_View">
+     <MenuItem Header="_Overview" Tag="overview" Click="Menu_Click"/><MenuItem Header="_Image &amp; Video" Tag="comfy" Click="Menu_Click"/>
+     <MenuItem Header="_Coding" Tag="coding" Click="Menu_Click"/><MenuItem Header="_Assistant" Tag="chat" Click="Menu_Click"/>
+     <Separator/><MenuItem x:Name="SidebarMenu" Header="_Sidebar" Tag="toggleSidebar" IsCheckable="True" IsChecked="True" InputGestureText="Ctrl+B" Click="Menu_Click"/>
+     <MenuItem x:Name="ContextMenuItem" Header="_Context status" Tag="toggleContext" IsCheckable="True" IsChecked="True" InputGestureText="Ctrl+Shift+K" Click="Menu_Click"/>
+     <Separator/><MenuItem Header="Zoom _in" Tag="zoomIn" InputGestureText="Ctrl++" Click="Menu_Click"/>
+     <MenuItem Header="Zoom _out" Tag="zoomOut" InputGestureText="Ctrl+−" Click="Menu_Click"/>
+     <MenuItem Header="_Reset zoom" Tag="resetZoom" InputGestureText="Ctrl+0" Click="Menu_Click"/>
+    </MenuItem>
+    <MenuItem Header="_Help">
+     <MenuItem Header="_Getting started" Tag="helpGuide" Click="Menu_Click"/>
+     <MenuItem Header="_Keyboard shortcuts" Tag="helpKeys" Click="Menu_Click"/>
+     <MenuItem Header="Open _file backups" Tag="openBackups" Click="Menu_Click"/>
+     <MenuItem Header="Open app _data" Tag="openDataFolder" Click="Menu_Click"/>
+     <Separator/><MenuItem Header="_About AI Control" Tag="helpAbout" Click="Menu_Click"/>
+    </MenuItem>
+   </Menu>
+  </DockPanel>
+  <wv:WebView2 x:Name="Shell" Grid.Row="1" DefaultBackgroundColor="#181818"/>
+  <Border x:Name="Workspace" Grid.Row="1" Visibility="Collapsed" Background="#181818">
    <Grid><Grid.RowDefinitions><RowDefinition Height="42"/><RowDefinition Height="*"/></Grid.RowDefinitions>
     <Grid Margin="15,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBlock x:Name="WorkspaceTitle" Foreground="#d8e6f5" VerticalAlignment="Center" FontSize="14"/>
      <Button Content="Back to overview" Click="Back_Click" Grid.Column="1" Padding="14,3" Background="#23334c" Foreground="White" BorderThickness="0" Cursor="Hand"/>
     </Grid>
-    <wv:WebView2 x:Name="ServiceView" Grid.Row="1" DefaultBackgroundColor="#0c1420"/>
+    <wv:WebView2 x:Name="ServiceView" Grid.Row="1" DefaultBackgroundColor="#181818"/>
    </Grid>
   </Border>
  </Grid>

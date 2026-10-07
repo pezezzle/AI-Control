@@ -7,17 +7,20 @@
 [![TypeScript 5.9](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Windows x64](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4)](docs/SETUP.md)
 
-A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.4.3**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
+A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.4.6**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
 
 **Project status:** The Windows build and automated server, assistant and interface checks pass. Real local tests cover Huihui Qwen3.8 file tools, reviewed file creation, image recognition and Whisper transcription. See [Build and test status](docs/VERIFIED.md) for the tested environment and limitations.
 
 ## Features
 
+- Native dark File/Edit/View/Help menus, matching title bar, persistent sidebar/context visibility and 75–150% interface zoom.
 - Service status, active and queued jobs, start/stop controls, logs, and installation folders.
 - Persistent separate chats with their own workspace, model and permissions, plus a serial request queue.
-- Measured context usage, automatic or custom output budgets, automatic/manual compaction and restorable checkpoints that preserve original transcripts.
+- A neutral dark chat interface with a rounded composer, model/access selectors, image attachment and dictation controls. Single-line chat titles use a right-click Rename/Delete menu.
+- Context display above the composer with `/context` visibility commands, automatic or custom output budgets, bounded in-task compaction/recovery and restorable checkpoints.
+- Visible task phases, completed tool/file counts, and a per-chat Thinking setting.
 - ComfyUI embedded in the app and a built-in local assistant with streamed responses and cancelable tasks.
-- Workspace file listing, reading, search and reviewed writes; read-only access by default, with optional separately approved script execution.
+- Workspace file tools with Read only, Review writes and Workspace write. Automatic folder writes retain previous versions outside the project; script execution remains separately approved.
 - Mandatory global `AGENTS.md`, project and directory rules, and a visible list of loaded instructions.
 - PNG, JPEG and WebP attachments with compatible vision models; local microphone dictation through Whisper.
 - Existing GGUF model selection, custom numeric context size, model-limit validation, optional Continue context sync and automatic GPU allocation.

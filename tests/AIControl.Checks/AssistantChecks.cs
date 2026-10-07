@@ -102,7 +102,7 @@ internal static class AssistantChecks
             using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(kind,value)=>events.Add(kind+":"+JsonSerializer.Serialize(value)),CancellationToken.None);
             check(events.Any(x=>x.StartsWith("chatProgress:")&&x.Contains("\"phase\":\"thinking\"")&&x.Contains("\"reasoningCharacters\":18"))&&!events.Any(x=>x.Contains("Synthetic thinking")),"Reasoning progress is visible without exposing raw thought text");
             handler=new ChatBackend([thinking+"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n"]);events.Clear();
-            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(kind,value)=>events.Add(kind+":"+value),CancellationToken.None);
+            using(var chat=new AssistantChat(new HttpClient(handler),global))await chat.RunAsync(options,"Hello",[],(_,_)=>Task.FromResult(false),(kind,value)=>events.Add(kind+":"+value),CancellationToken.None,CompactionMode.Off);
             check(events.Any(e=>e.StartsWith("chatIncomplete")&&e.Contains("while thinking")&&e.Contains("no final answer")),"Reasoning-only budget exhaustion is explained accurately");
         }
         finally{Directory.Delete(temp,true);}

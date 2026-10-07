@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 namespace AIControl;
 
 public enum CompactionMode { Automatic, Manual, Off }
+public sealed record AssistantTaskProgress(int Round, string Phase, int CompletedTools, int SavedFiles, string LastAction, int Recoveries, bool ThinkingEnabled, string Request="");
 public sealed record ContextUsage(int? Used, int Capacity, int Reserve, bool Exact, string Source)
 {
     public double? Percent => Used is int n && Capacity > 0 ? 100.0 * n / Capacity : null;
@@ -20,6 +21,7 @@ public sealed record ChatEntry
     public string Role { get; init; } = "activity";
     public string Text { get; set; } = "";
     public string[] Images { get; init; } = [];
+    public int Round { get; init; }
     public DateTimeOffset Created { get; init; } = DateTimeOffset.UtcNow;
 }
 public sealed record ContextCheckpoint
@@ -41,6 +43,8 @@ public sealed record ChatSession
     public CompactionMode Compaction { get; set; } = CompactionMode.Automatic;
     public int ReplyReserve { get; set; } = 16384;
     public bool AutomaticReplyBudget { get; set; } = true;
+    public bool ThinkingEnabled { get; set; } = true;
+    public AssistantTaskProgress? Progress { get; set; }
     public DateTimeOffset Updated { get; set; } = DateTimeOffset.UtcNow;
     public bool Deleted { get; set; }
     public string Status { get; set; } = "Ready";
@@ -54,9 +58,10 @@ public sealed record ChatSession
             || !Enum.IsDefined(Access) || !Enum.IsDefined(Compaction) || ReplyReserve is <1 or >1048576)
             throw new InvalidDataException("Invalid saved chat settings.");
         if(Entries is null || Checkpoints is null)throw new InvalidDataException("Missing chat data.");
+        if(Progress is {} progress && (progress.Round is <0 or >16 || progress.CompletedTools is <0 or >256 || progress.SavedFiles is <0 or >256 || progress.Recoveries is <0 or >2 || progress.Phase is null || progress.Phase.Length>100 || progress.LastAction is null || progress.LastAction.Length>600 || progress.Request is null || progress.Request.Length>200))throw new InvalidDataException("Invalid task progress.");
         AssistantChat.ValidateMemory(Memory);
         foreach(var checkpoint in Checkpoints) { if(checkpoint is null||checkpoint.Before<0||checkpoint.After<0||!Guid.TryParseExact(checkpoint.Id,"N",out _))throw new InvalidDataException("Invalid checkpoint.");AssistantChat.ValidateMemory(checkpoint.Memory); }
-        if(Entries.Any(e=>e is null || e.Text is null || e.Images is null || e.Role is not ("user" or "assistant" or "activity") || e.Text.Length>ResponseBudget.MaxMessageCharacters || e.Images.Length>4 || e.Images.Any(i=>i is null||!AssistantChat.ValidImage(i))))
+        if(Entries.Any(e=>e is null || e.Text is null || e.Images is null || e.Round is <0 or >16 || e.Role is not ("user" or "assistant" or "activity") || e.Text.Length>ResponseBudget.MaxMessageCharacters || e.Images.Length>4 || e.Images.Any(i=>i is null||!AssistantChat.ValidImage(i))))
             throw new InvalidDataException("Invalid chat transcript.");
     }
 }

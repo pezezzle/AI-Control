@@ -23,6 +23,7 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await InitializeAsync();
         timer.Tick += async (_, _) => await RefreshAsync();
         Closing += OnClosing;
+        SourceInitialized += (_,_)=>ApplyDarkTitleBar();
         Closed += (_, _) => { closed = true; chatCancellation?.Cancel(); speechCancellation?.Cancel(); pendingReview?.TrySetResult(false); timer.Stop(); Shell.Dispose(); ServiceView.Dispose(); foreach (var service in services.Values) service.Control.Dispose(); CloseChats(); };
     }
     private void ReplaceServices()
@@ -95,7 +96,11 @@ public partial class MainWindow : Window
             if (e.WebMessageAsJson.Length > 30_000_000) throw new InvalidDataException("The request is too large.");
             using var document = JsonDocument.Parse(e.WebMessageAsJson); var root = document.RootElement;
             var type = root.GetProperty("type").GetString(); notice = "";
-            if (type == "ready") { ready = true; SendSnapshot(); SendChats(); return; }
+            if (type == "ready") { ready = true; AppMenu.IsEnabled=true; SendSnapshot(); SendChats(); return; }
+            if(type=="viewPreferences"){ApplyViewPreferences(root.GetProperty("sidebar").GetBoolean(),root.GetProperty("context").GetBoolean(),root.GetProperty("zoom").GetDouble());return;}
+            if(type=="exitApp"){Close();return;}
+            if(type=="copyText"){Clipboard.SetText(root.GetProperty("text").GetString()??"");return;}
+            if(type=="openDataFolder"){Directory.CreateDirectory(SettingsStore.DataDirectory);OpenPath(SettingsStore.DataDirectory);return;}
             if (await HandleAssistantAsync(root)) return;
             if (type == "saveSettings")
             {
@@ -188,8 +193,9 @@ public partial class MainWindow : Window
         }
         workspaceId = service.Definition.Id; WorkspaceTitle.Text = service.Definition.Name + " · " + service.Definition.Url;
         Shell.Visibility = Visibility.Collapsed; Workspace.Visibility = Visibility.Visible; core.Navigate(service.Definition.Url);
+        EditMenu.IsEnabled=false;
     }
-    private void HideWorkspace() { Workspace.Visibility = Visibility.Collapsed; Shell.Visibility = Visibility.Visible; }
+    private void HideWorkspace() { Workspace.Visibility = Visibility.Collapsed; Shell.Visibility = Visibility.Visible; EditMenu.IsEnabled=true; }
     private void Back_Click(object sender, RoutedEventArgs e) => HideWorkspace();
     private void Send(object value) { if (!closed && ready) Shell.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(value, SettingsStore.Json)); }
     private static void OpenPath(string value) => Process.Start(new ProcessStartInfo(value) { UseShellExecute = true });

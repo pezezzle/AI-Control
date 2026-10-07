@@ -13,6 +13,8 @@ test-results/
 playwright-report/
 src/AIControl.Host/Web/app.js
 src/AIControl.Host/Web/assistant.js
+src/AIControl.Host/Web/markdown.js
+src/AIControl.Host/Web/ui.js
 
 # Local credentials and runtime data never belong in this repository.
 .env

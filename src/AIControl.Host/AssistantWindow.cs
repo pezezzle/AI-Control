@@ -44,7 +44,7 @@ public partial class MainWindow
             sessions=chats.Values.Where(s=>!s.Data.Deleted).OrderByDescending(s=>s.Data.Updated).Select(s=>new{s.Data.Id,s.Data.Title,s.Data.Status,s.Data.Workspace,s.Data.Model}).ToArray(),
             current=transcript&&chats.TryGetValue(selectedChat,out var current)?ChatView(current.Data):null});
     }
-    private static object ChatView(ChatSession data)=>new{data.Id,data.Title,data.Workspace,data.Model,data.Access,data.AllowScripts,data.Compaction,data.ReplyReserve,data.AutomaticReplyBudget,data.Status,data.Entries,
+    private static object ChatView(ChatSession data)=>new{data.Id,data.Title,data.Workspace,data.Model,data.Access,data.AllowScripts,data.Compaction,data.ReplyReserve,data.AutomaticReplyBudget,data.ThinkingEnabled,data.Progress,data.Status,data.Entries,
         memory=new{data.Memory.Usage},checkpoints=data.Checkpoints.Select(c=>new{c.Id,c.Created,c.Before,c.After}).ToArray()};
     private ControlSettings ChatSettings(ChatSession data)=>settings with{ProjectDirectory=data.Workspace,Coding=settings.Coding with{Model=data.Model},Assistant=settings.Assistant with{Access=data.Access,AllowScriptExecution=data.AllowScripts}};
     private SessionRuntime MessageChat(JsonElement root)
@@ -96,7 +96,7 @@ public partial class MainWindow
             catch(Exception ex){Send(new{type="speechError",sessionId=target,value=FriendlyError(ex)});}
             finally{speechBusy=false;speechCancellation.Dispose();speechCancellation=null;}return true;
         }
-        if(type is not ("assistantPermissions" or "chatCancel" or "chatRename" or "chatDelete" or "chatContextOptions" or "chatMeasure" or "chatRestore" or "chatCompact" or "chatSend" or "chatModel"))return false;
+        if(type is not ("assistantPermissions" or "chatCancel" or "chatRename" or "chatDelete" or "chatContextOptions" or "chatThinking" or "chatMeasure" or "chatRestore" or "chatCompact" or "chatSend" or "chatModel"))return false;
         var runtime=MessageChat(root);var data=runtime.Data;
         if(type=="chatCancel")
         {
@@ -105,12 +105,12 @@ public partial class MainWindow
         }
         if(type=="assistantPermissions")
         {
-            RequireIdle(runtime);var access=root.GetProperty("access").GetString();if(access is not ("ReadOnly" or "ReadWrite"))throw new InvalidDataException("Invalid access mode.");
+            RequireIdle(runtime);var access=root.GetProperty("access").GetString();if(access is not ("ReadOnly" or "ReadWrite" or "WorkspaceWrite"))throw new InvalidDataException("Invalid access mode.");
             data.Access=Enum.Parse<WorkspaceAccess>(access);data.AllowScripts=root.GetProperty("allowScripts").GetBoolean();
             runtime.Chat.ImportMemory(runtime.Chat.ExportMemory() with{SessionKey="",Usage=null});SaveChat(runtime,true);SendChats();return true;
         }
         if(type=="chatRename") {var title=root.GetProperty("title").GetString()?.Trim();if(string.IsNullOrEmpty(title)||title.Length>100)throw new InvalidDataException("Use a chat title of 1–100 characters.");data.Title=title;SaveChat(runtime);SendChats();return true;}
-        if(type=="chatDelete") {RequireIdle(runtime);data.Deleted=true;SaveChat(runtime);selectedChat=chats.Values.FirstOrDefault(s=>!s.Data.Deleted)?.Data.Id??"";if(selectedChat.Length==0)NewChat();SendChats();return true;}
+        if(type=="chatDelete") {RequireIdle(runtime);data.Deleted=true;SaveChat(runtime);if(selectedChat==data.Id){selectedChat=chats.Values.FirstOrDefault(s=>!s.Data.Deleted)?.Data.Id??"";if(selectedChat.Length==0)NewChat();}SendChats();return true;}
         if(type=="chatModel")
         {
             RequireIdle(runtime);var model=root.GetProperty("model").GetString()??"";
@@ -121,6 +121,10 @@ public partial class MainWindow
             RequireIdle(runtime);var mode=root.GetProperty("mode").GetString();if(mode is not ("Automatic" or "Manual" or "Off"))throw new InvalidDataException("Invalid compaction mode.");
             var reserve=root.GetProperty("reserve").GetInt32();if(reserve is <1 or >1048576)throw new InvalidDataException("Choose a custom output budget from 1 to 1,048,576 tokens.");
             data.Compaction=Enum.Parse<CompactionMode>(mode);data.ReplyReserve=reserve;data.AutomaticReplyBudget=root.GetProperty("automaticReplyBudget").GetBoolean();if(data.Memory.Usage is {} usage){data.Memory=data.Memory with{Usage=usage with{Reserve=usage.Used is int used?ResponseBudget.Resolve(usage.Capacity,used,reserve,data.AutomaticReplyBudget):0}};runtime.Chat.ImportMemory(data.Memory);}SaveChat(runtime);SendChats();return true;
+        }
+        if(type=="chatThinking")
+        {
+            RequireIdle(runtime);data.ThinkingEnabled=root.GetProperty("enabled").GetBoolean();SaveChat(runtime);SendChats();return true;
         }
         if(type=="chatMeasure")
         {
@@ -161,11 +165,27 @@ public partial class MainWindow
         while(chatQueue.TryDequeue(out var job))
         {
             activeJob=job;chatCancellation=job.Cancellation;var runtime=job.Runtime;var data=runtime.Data;ChatEntry? answer=null;var answerText=new StringBuilder();bool incomplete=false;DateTimeOffset flushed=DateTimeOffset.MinValue;
-            void Checkpoint(ContextCheckpoint point){data.Checkpoints.Add(point);SaveChat(runtime);}
+            void Checkpoint(ContextCheckpoint point)
+            {
+                if(answer is not null)answer.Text=answerText.ToString();
+                var previous=data.Memory;data.Memory=point.Memory;
+                data.Checkpoints.Add(point);
+                try{SaveChat(runtime);}catch{data.Checkpoints.Remove(point);data.Memory=previous;throw;}
+            }
+            void Memory(ChatMemory memory){if(answer is not null)answer.Text=answerText.ToString();data.Memory=memory;SaveChat(runtime);}
+            void FinishAnswer(){if(answer is not null)answer.Text=answerText.ToString();answer=null;answerText.Clear();}
             void Report(string type,object? value)
             {
-                if(type=="chatToken") {answer??=new(){Role="assistant"};if(!data.Entries.Contains(answer))data.Entries.Add(answer);answerText.Append(Convert.ToString(value));if(DateTimeOffset.UtcNow-flushed>TimeSpan.FromSeconds(1)){answer.Text=answerText.ToString();SaveChat(runtime);flushed=DateTimeOffset.UtcNow;}}
+                if(type=="modelRound")FinishAnswer();
+                if(type=="taskProgress")data.Progress=(AssistantTaskProgress?)value;
+                if(type=="chatProgress"&&data.Progress is {} progress)
+                {
+                    var phase=JsonSerializer.SerializeToElement(value).GetProperty("phase").GetString()??"Generating";
+                    data.Progress=progress with{Phase=phase};
+                }
+                if(type=="chatToken") {answer??=new(){Role="assistant",Round=data.Progress?.Round??0};if(!data.Entries.Contains(answer))data.Entries.Add(answer);answerText.Append(Convert.ToString(value));if(DateTimeOffset.UtcNow-flushed>TimeSpan.FromSeconds(1)){answer.Text=answerText.ToString();SaveChat(runtime);flushed=DateTimeOffset.UtcNow;}}
                 if(type is "chatIncomplete" or "contextWarning"){if(type=="chatIncomplete")incomplete=true;data.Entries.Add(new(){Text=Convert.ToString(value)??""});}
+                if(type=="taskRecovery"){FinishAnswer();data.Entries.Add(new(){Text=Convert.ToString(value)??""});SaveChat(runtime,true);}
                 if(type=="toolResult"||type=="contextCompacted") {data.Entries.Add(new(){Text=type=="toolResult"?Convert.ToString(value)??"":"Context compacted: "+JsonSerializer.Serialize(value,SettingsStore.Json)});if(type=="contextCompacted")SaveChat(runtime,true);else SaveChat(runtime);}
                 if(type=="contextUsage")data.Memory=data.Memory with{Usage=runtime.Chat.LastUsage};
                 Send(new{type,sessionId=data.Id,value});
@@ -174,13 +194,14 @@ public partial class MainWindow
             {
                 job.Cancellation.Token.ThrowIfCancellationRequested();data.Status=job.Compact?"Compacting":"Running";SaveChat(runtime);SendChats();
                 if(job.Compact)await runtime.Chat.CompactAsync(job.Settings,Report,job.Cancellation.Token,Checkpoint,data.ReplyReserve,data.AutomaticReplyBudget,compactRecent:!runtime.Chat.CanKeepRecentTurns);
-                else await runtime.Chat.RunAsync(job.Settings,job.Prompt,job.Images,(review,token)=>ReviewAsync(runtime,review,token),Report,job.Cancellation.Token,data.Compaction,data.ReplyReserve,Checkpoint,data.AutomaticReplyBudget);
+                else await runtime.Chat.RunAsync(job.Settings,job.Prompt,job.Images,(review,token)=>ReviewAsync(runtime,review,token),Report,job.Cancellation.Token,data.Compaction,data.ReplyReserve,Checkpoint,data.AutomaticReplyBudget,data.ThinkingEnabled,Memory);
                 data.Status=incomplete?"Incomplete":"Ready";
             }
             catch(Exception ex)
             {
                 var error=ex is OperationCanceledException?"Task canceled. Completed file changes remain saved.":FriendlyError(ex);
                 data.Status=ex is OperationCanceledException?"Canceled":"Failed";data.Entries.Add(new(){Text=error});Send(new{type="chatError",sessionId=data.Id,value=error});Log("assistant",new InvalidOperationException(ex.GetType().Name+": "+error));
+                if(data.Progress is {} progress)data.Progress=progress with{Phase=data.Status};
             }
             finally
             {

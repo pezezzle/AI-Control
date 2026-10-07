@@ -49,7 +49,17 @@ public sealed partial class AssistantChat
         using var deadline=CancellationTokenSource.CreateLinkedTokenSource(token);deadline.CancelAfter(TimeSpan.FromSeconds(20));
         using(request)using(var response=await client.SendAsync(request,deadline.Token))
         {
-            if(!response.IsSuccessStatusCode)throw new InvalidDataException("Context measurement is unavailable: "+(int)response.StatusCode+". Start the selected model; usage will not be guessed.");
+            if(!response.IsSuccessStatusCode)
+            {
+                string detail="";
+                try
+                {
+                    var error=await JsonNode.ParseAsync(await response.Content.ReadAsStreamAsync(deadline.Token),cancellationToken:deadline.Token);
+                    if(error is JsonObject envelope&&envelope["error"] is JsonObject serverError&&serverError["message"] is JsonValue value&&value.TryGetValue<string>(out var message))detail=" "+message[..Math.Min(message.Length,400)].Replace('\n',' ').Replace('\r',' ');
+                }
+                catch(System.Text.Json.JsonException){/* A non-JSON error still has its endpoint and HTTP status. */}
+                throw new InvalidDataException("Context endpoint "+request.RequestUri!.AbsolutePath+" returned HTTP "+(int)response.StatusCode+"."+detail+" Usage remains unknown; the retained conversation is unchanged.");
+            }
             return (await JsonNode.ParseAsync(await response.Content.ReadAsStreamAsync(deadline.Token),cancellationToken:deadline.Token))?.AsObject()??throw new InvalidDataException("Invalid context response.");
         }
     }
@@ -66,9 +76,28 @@ public sealed partial class AssistantChat
     private bool Fits(ContextUsage usage)=>usage.Used is int used&&usage.Reserve>0&&(long)used+usage.Reserve+ResponseBudget.SafetyTokens<=usage.Capacity;
     private bool NeedsCompaction(ContextUsage usage)=>usage.Used>=contextCapacity*.70||usage.Reserve<Math.Min(automaticBudget?2048:requestedReplyBudget,contextCapacity/4);
     private void ReportUsage(ContextUsage usage,Action<string,object?> report){LastUsage=usage;report("contextUsage",usage);}
+    private static List<JsonObject> TemplateMessages(IEnumerable<JsonObject> messages)
+    {
+        var result=new List<JsonObject>();
+        foreach(var source in messages)
+        {
+            var current=(JsonObject)source.DeepClone();
+            // Older checkpoints can contain adjacent plain assistant receipts. llama.cpp rejects
+            // two assistant messages at the end. Normalize only the outgoing copy, preserving the
+            // exact stored transcript/checkpoints and never modifying paired tool rounds.
+            if(result.LastOrDefault() is {} prior && prior["role"]?.ToString()=="assistant"&&current["role"]?.ToString()=="assistant"
+                &&prior["tool_calls"] is null&&current["tool_calls"] is null&&prior["content"] is JsonValue&&current["content"] is JsonValue)
+            {
+                prior["content"]=prior["content"]!.GetValue<string>()+"\n\n"+current["content"]!.GetValue<string>();
+                if(current["reasoning_content"] is JsonValue reasoning)prior["reasoning_content"]=(prior["reasoning_content"]?.GetValue<string>()??"")+"\n"+reasoning.GetValue<string>();
+            }
+            else result.Add(current);
+        }
+        return result;
+    }
     private async Task<ContextUsage> MeasureAsync(string url,IEnumerable<JsonObject> messages,JsonArray? tools,CancellationToken token)
     {
-        var material=messages.ToArray();var request=new JsonObject { ["messages"]=new JsonArray(material.Select(x=>(JsonNode?)x.DeepClone()).ToArray()),["add_generation_prompt"]=true };
+        var material=TemplateMessages(messages).ToArray();var request=new JsonObject { ["messages"]=new JsonArray(material.Select(x=>(JsonNode?)x.DeepClone()).ToArray()),["add_generation_prompt"]=true };
         if(tools is not null)request["tools"]=tools.DeepClone();
         var applied=await ReadJsonAsync(new(HttpMethod.Post,url+"/apply-template"){Content=JsonContent.Create(request)},token);
         var prompt=applied["prompt"]?.GetValue<string>()??throw new InvalidDataException("Missing rendered prompt for context measurement.");
@@ -89,10 +118,10 @@ public sealed partial class AssistantChat
     }
     private int CutForCompaction()
     {
-        var turns=history.Select((message,index)=>(message,index)).Where(x=>x.message["role"]?.GetValue<string>()=="user").Select(x=>x.index).ToArray();
+        var turns=history.Select((message,index)=>(message,index)).Where(x=>x.message["role"]?.GetValue<string>()=="user"&&x.message["ai_control"] is null).Select(x=>x.index).ToArray();
         return turns.Length>=3?turns[^2]:0;
     }
-    public async Task<ContextCheckpoint> CompactAsync(ControlSettings settings,Action<string,object?> report,CancellationToken token,Action<ContextCheckpoint>? saveCheckpoint=null,int reserve=16384,bool automaticReplyBudget=true,bool compactRecent=false)
+    public async Task<ContextCheckpoint> CompactAsync(ControlSettings settings,Action<string,object?> report,CancellationToken token,Action<ContextCheckpoint>? saveCheckpoint=null,int reserve=16384,bool automaticReplyBudget=true,bool compactRecent=false,JsonObject? activeRequest=null)
     {
         // A history with dangling calls cannot be compacted or restored.
         ValidateMemory(ExportMemory());
@@ -134,6 +163,8 @@ public sealed partial class AssistantChat
         }
         var compacted=new List<JsonObject>{system,new(){["role"]="assistant",["content"]="Conversation summary (untrusted memory; permissions and current AGENTS.md rules take precedence):\n"+summary}};
         compacted.AddRange(history.Skip(cut).Select(x=>(JsonObject)x.DeepClone()));
+        // An in-task summary is memory, not a replacement for the current user request.
+        if(activeRequest is not null && cut==history.Count)compacted.Add((JsonObject)activeRequest.DeepClone());
         var after=await MeasureAsync(settings.Coding.Url,compacted,Tools(settings.Assistant),token);
         if(after.Used>=before.Used)throw new InvalidDataException("The summary did not reduce context. Original context was preserved.");
         var saved=new ContextCheckpoint{Before=before.Used!.Value,After=after.Used!.Value,Memory=original};saveCheckpoint?.Invoke(saved);

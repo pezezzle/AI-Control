@@ -1,7 +1,7 @@
 type ServiceId = 'comfy' | 'coding';
 type ServerState = 'Offline'|'Running'|'Busy'|'UnknownQueue'|'Loading'|'Unreachable'|'Foreign';
 interface Definition { kind:string; installDirectory:string; port:number; model:string; contextSize:number; gpuLayers:string; visionEnabled?:boolean }
-interface AssistantOptions { access:'ReadOnly'|'ReadWrite'; allowScriptExecution:boolean; syncContinueContext:boolean; speechExecutable:string; speechModel:string }
+interface AssistantOptions { access:'ReadOnly'|'ReadWrite'|'WorkspaceWrite'; allowScriptExecution:boolean; syncContinueContext:boolean; speechExecutable:string; speechModel:string }
 interface Settings { comfyUI:Definition; coding:Definition; projectDirectory:string; assistant?:AssistantOptions }
 interface Service { id:ServiceId; name:string; url:string; state:ServerState; running:number; pending:number; loadedModel:string|null; healthy:boolean; queueKnown:boolean; operating:boolean; starting:boolean; stopScheduled:boolean; error:string; models:string[] }
 interface Snapshot { type:'snapshot'; settings:Settings; services:Service[]; notice:string; globalRulesPath?:string; chatBusy?:boolean }
@@ -69,6 +69,7 @@ function render():void {
 }
 document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(button=>button.addEventListener('click',()=>{
  page=button.dataset.page!;
+ document.body.classList.toggle('chat-view',page==='chat');
  document.querySelectorAll<HTMLElement>('.page').forEach(section=>section.hidden=section.id!==`page-${page}`);
  document.querySelectorAll('[data-page]').forEach(item=>item.classList.toggle('active',item===button)); render();
 }));
