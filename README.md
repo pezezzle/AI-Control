@@ -7,7 +7,7 @@
 [![TypeScript 5.9](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Windows x64](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D4)](docs/SETUP.md)
 
-A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.4.6**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
+A local Windows control app for ComfyUI and a llama.cpp coding server. Start and stop services, chat with local models, inspect a selected workspace, review file changes, attach images and dictate messages. Development version **0.4.9**. The host uses C# / .NET 10 and WPF; the interface uses HTML, CSS, and TypeScript in WebView2. The app interface, documentation, and application messages are in English.
 
 **Project status:** The Windows build and automated server, assistant and interface checks pass. Real local tests cover Huihui Qwen3.8 file tools, reviewed file creation, image recognition and Whisper transcription. See [Build and test status](docs/VERIFIED.md) for the tested environment and limitations.
 
@@ -17,7 +17,7 @@ A local Windows control app for ComfyUI and a llama.cpp coding server. Start and
 - Service status, active and queued jobs, start/stop controls, logs, and installation folders.
 - Persistent separate chats with their own workspace, model and permissions, plus a serial request queue.
 - A neutral dark chat interface with a rounded composer, model/access selectors, image attachment and dictation controls. Single-line chat titles use a right-click Rename/Delete menu.
-- Context display above the composer with `/context` visibility commands, automatic or custom output budgets, bounded in-task compaction/recovery and restorable checkpoints.
+- Context display above the composer with `/context` visibility commands, automatic or custom output budgets, progress-aware in-task compaction/recovery and restorable checkpoints. Tasks have no fixed model/tool round limit.
 - Visible task phases, completed tool/file counts, and a per-chat Thinking setting.
 - ComfyUI embedded in the app and a built-in local assistant with streamed responses and cancelable tasks.
 - Workspace file tools with Read only, Review writes and Workspace write. Automatic folder writes retain previous versions outside the project; script execution remains separately approved.
@@ -64,6 +64,8 @@ The app starts the server, offers its own workspace assistant and can open VS Co
 Use **Stop** to end an idle service. When jobs are active or their status is unknown, choose **Stop after all jobs** or explicitly **Stop now and cancel jobs**. **Cancel stop** removes a scheduled stop. Unknown workload is never treated as idle.
 
 The default coding model is `qwen2.5-coder-14b-instruct.gguf`, with a 32,768-token context and automatic GPU fitting. Model files are discovered in the configured server's `models` folder. Change the model while the coding server is stopped. Automatic fitting can offload part of a larger model to system RAM; performance depends on the model and hardware.
+
+Choose **Image support** on the coding server card before starting. Turn it off for text-only work with lower GPU memory use. The switch saves immediately and is locked while the coding server runs or its status is unknown. It never stops a server automatically. A matching vision component adds a larger GPU memory reserve during automatic fitting.
 
 ## Privacy and security
 

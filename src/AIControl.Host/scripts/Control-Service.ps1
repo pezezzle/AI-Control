@@ -40,7 +40,10 @@ if (-not $serverProcess) {
         $modelPath = Join-Path (Join-Path $installRoot 'models') $Model
         if (-not (Test-Path -LiteralPath $modelPath -PathType Leaf)) { throw ('Model missing: ' + $Model) }
         $env:PATH = (Split-Path -Parent $serverExe) + ';' + $env:PATH
-        $arguments = @('-m', ('"' + $modelPath + '"'), '--alias','local-coder','--host','127.0.0.1','--port',[string]$Port,'--ctx-size',[string]$ContextSize,'--n-gpu-layers',$GpuLayers,'--fit-target','1536','--parallel','1','--slots','--metrics','--jinja')
+        # Auto-fit runs before the vision component is loaded. Reserve space for
+        # that component and its working buffers to avoid WDDM memory paging.
+        $fitTarget = if ($Projector) { '4096' } else { '1536' }
+        $arguments = @('-m', ('"' + $modelPath + '"'), '--alias','local-coder','--host','127.0.0.1','--port',[string]$Port,'--ctx-size',[string]$ContextSize,'--n-gpu-layers',$GpuLayers,'--fit-target',$fitTarget,'--parallel','1','--slots','--metrics','--jinja')
         if ($Projector) {
             $visionRoot = [IO.Path]::GetFullPath((Join-Path $installRoot 'models\vision'))
             $projectorPath = [IO.Path]::GetFullPath($Projector)

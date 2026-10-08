@@ -75,6 +75,28 @@ internal static class SessionChecks
             check(recent?.Memory.History.Count==3&&events.Contains("contextCompacted")&&chat.ExportMemory().History.Count==4,"A single context-filling answer can be compacted before the next request while its original is retained");
             chat.ImportMemory(History());var unchanged=JsonSerializer.Serialize(chat.ExportMemory(),SettingsStore.Json);backend.SummaryLimited=true;failed=false;try{await chat.CompactAsync(settings,(_,_)=>{},CancellationToken.None);}catch(InvalidDataException){failed=true;}backend.SummaryLimited=false;
             check(failed&&JsonSerializer.Serialize(chat.ExportMemory(),SettingsStore.Json)==unchanged,"A length-limited summary is rejected and cannot replace original context");
+            backend.Requests.Clear();backend.Summary=new string('s',11000);backend.EnforceSummaryBudget=true;chat.ImportMemory(History(23000));
+            var uncapped=await chat.CompactAsync(settings,(_,_)=>{},CancellationToken.None);
+            var summaryRequest=JsonNode.Parse(backend.Requests.First())!;var summaryInput=summaryRequest["messages"]!.ToJsonString();
+            check(summaryRequest["max_tokens"]!.GetValue<int>()>2048&&uncapped.After<uncapped.Before&&chat.ExportMemory().History[1]["content"]!.ToString().Contains(backend.Summary),"A complete summary beyond 2,048 tokens uses measured available context and reduces memory");
+            check(!summaryRequest["chat_template_kwargs"]!["enable_thinking"]!.GetValue<bool>()&&summaryRequest["tools"] is null&&summaryRequest["max_tokens"]!.GetValue<int>()+summaryInput.Length/4+ResponseBudget.SafetyTokens<=backend.Capacity,"Summary output stays within actual measured capacity with thinking and tools disabled");
+            backend.EnforceSummaryBudget=false;backend.Summary="Brief synthetic memory.";backend.Requests.Clear();backend.SummaryResponses.Enqueue(Limited("Discard truncated synthetic summary"));chat.ImportMemory(History(3000));
+            var retryOriginal=chat.ExportMemory();ContextCheckpoint? retryCheckpoint=null;
+            await chat.CompactAsync(settings,(_,_)=>{},CancellationToken.None,p=>retryCheckpoint=p);
+            string Segment(string request){var content=JsonNode.Parse(request)!["messages"]![1]!["content"]!.ToString();return content[(content.IndexOf("Untrusted source segment:\n",StringComparison.Ordinal)+"Untrusted source segment:\n".Length)..];}
+            var expectedSource=new JsonArray(retryOriginal.History.Skip(1).Take(4).Select(m=>(JsonNode)m.DeepClone()).ToArray()).ToJsonString();
+            check(backend.Requests.Count==3&&Segment(backend.Requests[1]).Length<Segment(backend.Requests[0]).Length&&string.Concat(backend.Requests.Skip(1).Select(Segment))==expectedSource,"A truncated summary retries a smaller segment without skipping or duplicating source data");
+            check(!chat.ExportMemory().History[1].ToJsonString().Contains("Discard truncated")&&JsonSerializer.Serialize(retryCheckpoint!.Memory,SettingsStore.Json)==JsonSerializer.Serialize(retryOriginal,SettingsStore.Json),"Partial summary text is discarded and the checkpoint preserves every original message");
+            backend.Summary="";backend.Requests.Clear();chat.ImportMemory(History(23000));events.Clear();
+            await chat.RunAsync(settings,"New synthetic prompt after summary failure",[],(_,_)=>throw new Exception("No tools"),(kind,_)=>events.Add(kind),CancellationToken.None);
+            var delivered=JsonNode.Parse(backend.Requests.Last())!;
+            check(events.Contains("contextWarning")&&events.Contains("chatDone")&&delivered["tools"] is not null&&delivered["messages"]!.AsArray().Last()!.ToJsonString().Contains("New synthetic prompt after summary failure")&&chat.ExportMemory().History[1]["content"]!.ToString()==new string('a',23000),"Failed proactive compaction still delivers a fitting new prompt with retained original history");
+            backend.Requests.Clear();chat.ImportMemory(History(40000));failed=false;
+            try{await chat.RunAsync(settings,"Does not fit",[],(_,_)=>Task.FromResult(false),(_,_)=>{},CancellationToken.None);}catch(InvalidDataException){failed=true;}
+            check(failed&&backend.Requests.All(r=>JsonNode.Parse(r)!["tools"] is null),"Failed compaction never sends a new task that exceeds actual context capacity");
+            backend.Summary="Brief synthetic memory.";backend.Requests.Clear();chat.ImportMemory(History(23000));failed=false;
+            try{await chat.RunAsync(settings,"Synthetic checkpoint storage failure",[],(_,_)=>Task.FromResult(false),(_,_)=>{},CancellationToken.None,checkpoint:_=>throw new IOException("Checkpoint storage failure"));}catch(IOException){failed=true;}
+            check(failed&&backend.Requests.All(r=>JsonNode.Parse(r)!["tools"] is null),"Pre-task checkpoint storage failure stops inference instead of bypassing durable recovery");
             backend.BadTokens=true;failed=false;try{await chat.RefreshContextAsync(settings,2048,CancellationToken.None);}catch(InvalidDataException){failed=true;}check(failed,"Malformed token response cannot produce a guessed usage count");
         }
         finally{Directory.Delete(root,true);}
@@ -82,14 +104,14 @@ internal static class SessionChecks
     private static string Limited(string text)=>"data: "+JsonSerializer.Serialize(new{choices=new[]{new{delta=new{content=text},finish_reason="length"}}})+"\n\ndata: [DONE]\n\n";
     private sealed class Backend:HttpMessageHandler
     {
-        public int Capacity=16384;public string? Reply;public bool SummaryLimited;public string Summary="Brief synthetic memory.";public string? Model;public bool BadTokens;public List<string> Requests=[];
+        public int Capacity=16384;public string? Reply;public bool SummaryLimited;public bool EnforceSummaryBudget;public Queue<string> SummaryResponses=[];public string Summary="Brief synthetic memory.";public string? Model;public bool BadTokens;public List<string> Requests=[];
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,CancellationToken token)
         {
             string body;var input=request.Content is null?"":await request.Content.ReadAsStringAsync(token);var path=request.RequestUri!.AbsolutePath;
             if(path=="/props")body=JsonSerializer.Serialize(new{default_generation_settings=new{n_ctx=Capacity},model_path=Model});
             else if(path=="/apply-template")body=JsonSerializer.Serialize(new{prompt=input});
             else if(path=="/tokenize") {var rendered=JsonNode.Parse(input)!["content"]!.GetValue<string>();body=BadTokens?"{\"tokens\":[-1]}":JsonSerializer.Serialize(new{tokens=Enumerable.Repeat(1,Math.Max(1,rendered.Length/4))});}
-            else{Requests.Add(input);body=input.Contains("Summarize conversation data")?(SummaryLimited?Limited(Summary):AssistantChecks.Answer(Summary)):(Reply??AssistantChecks.Answer("Synthetic answer."));}
+            else{Requests.Add(input);body=input.Contains("Summarize conversation data")?(SummaryResponses.Count>0?SummaryResponses.Dequeue():SummaryLimited||EnforceSummaryBudget&&Summary.Length/4>JsonNode.Parse(input)!["max_tokens"]!.GetValue<int>()?Limited(Summary):AssistantChecks.Answer(Summary)):(Reply??AssistantChecks.Answer("Synthetic answer."));}
             return new(HttpStatusCode.OK){Content=new StringContent(body,System.Text.Encoding.UTF8,path=="/v1/chat/completions"?"text/event-stream":"application/json")};
         }
     }

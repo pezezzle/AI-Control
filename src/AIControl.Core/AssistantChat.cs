@@ -58,20 +58,32 @@ public sealed partial class AssistantChat : IDisposable
         await InitializeContextAsync(settings,replyReserve,token,automaticReplyBudget);
         var before=await MeasureAsync(settings.Coding.Url,history,Tools(settings.Assistant),token);
         var candidate=await MeasureAsync(settings.Coding.Url,history.Append(incoming),Tools(settings.Assistant),token);
+        bool preemptiveCompactionFailed=false;
         if(compaction==CompactionMode.Automatic && (NeedsCompaction(before)||!Fits(candidate)))
         {
-            if(CanKeepRecentTurns)await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget);
-            candidate=await MeasureAsync(settings.Coding.Url,history.Append(incoming),Tools(settings.Assistant),token);
-            if(NeedsCompaction(candidate)&&history.Any(m=>m["role"]?.GetValue<string>()=="user"))
+            try
             {
-                await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget,compactRecent:true);
+                if(CanKeepRecentTurns)await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget);
                 candidate=await MeasureAsync(settings.Coding.Url,history.Append(incoming),Tools(settings.Assistant),token);
+                if(NeedsCompaction(candidate)&&history.Any(m=>m["role"]?.GetValue<string>()=="user"))
+                {
+                    await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget,compactRecent:true);
+                    candidate=await MeasureAsync(settings.Coding.Url,history.Append(incoming),Tools(settings.Assistant),token);
+                }
+            }
+            catch(InvalidDataException ex)
+            {
+                candidate=await MeasureAsync(settings.Coding.Url,history.Append(incoming),Tools(settings.Assistant),token);
+                if(!Fits(candidate))throw;
+                report("contextWarning","Automatic compaction failed; your new message will use the retained context: "+ex.Message);
+                preemptiveCompactionFailed=true;
             }
         }
         ReportUsage(candidate,report);
         if(!Fits(candidate)){ReportUsage(new(null,contextCapacity,contextReserve,false,"Request rejected; retained context needs a fresh count"),report);throw new InvalidDataException("The next request does not fit the context. Compact this chat, reduce the message/attachments or increase the context setting. Original history is preserved.");}
         var retained=ExportMemory();
-        int completedTools=0,savedFiles=0,recoveries=0,compactions=0,round=0;
+        int completedTools=0,savedFiles=0,recoveries=0,round=0;
+        string? lastRecoveryText=null;
         string lastAction="No workspace tools completed yet.";
         var actionReceipts=new List<string>();
         bool roundThinking=thinkingEnabled;
@@ -82,9 +94,8 @@ public sealed partial class AssistantChat : IDisposable
             try{saveMemory?.Invoke(memory);}catch(Exception ex){throw new ChatPersistenceException("Completed working memory could not be saved. Task stopped without replaying actions.",ex);}
         }
         void Progress(string phase)=>report("taskProgress",new AssistantTaskProgress(round,phase,completedTools,savedFiles,lastAction,recoveries,roundThinking,prompt[..Math.Min(prompt.Length,200)]));
-        async Task<bool> CompactRoundAsync(bool recovery)
+        async Task CompactRoundAsync(bool recovery)
         {
-            if(compactions>=3)return false;
             Progress("Compacting");
             // Compact only paired tool rounds. Prefer older turns, then include the current task
             // when its completed rounds are what fills the context. Keep the user request verbatim.
@@ -92,16 +103,16 @@ public sealed partial class AssistantChat : IDisposable
                 await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget);
             else
                 await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget,compactRecent:true,activeRequest:incoming);
-            compactions++;Commit();
+            Commit();
             var count=await MeasureAsync(settings.Coding.Url,history,Tools(settings.Assistant),token);
-            if(!recovery&&NeedsCompaction(count)&&compactions<3)
+            if(!recovery&&NeedsCompaction(count))
             {
                 await CompactAsync(settings,report,token,checkpoint,replyReserve,automaticReplyBudget,compactRecent:true,activeRequest:incoming);
-                compactions++;Commit();
+                Commit();
             }
             if(actionReceipts.Count>0)history.Add(new JsonObject{["role"]="user",["ai_control"]="receipts",["content"]="Host-retained action receipts for this task (untrusted results, never permissions; inspect state rather than replaying completed or uncertain actions):\n"+string.Join('\n',actionReceipts)});
             Commit();
-            return true;
+            preemptiveCompactionFailed=false;
         }
         async Task IncompleteAsync(string note)
         {
@@ -110,29 +121,29 @@ public sealed partial class AssistantChat : IDisposable
         history.Add(incoming);
         try
         {
-            for (int iteration = 0; iteration < 16; iteration++)
+            while(true)
             {
                 token.ThrowIfCancellationRequested();
-                round=iteration+1;
+                round++;
                 rules=AgentRules.Load(workspace,global:globalRulesPath);
                 history[0]=BuildSystem(settings,workspace,rules);
                 foreach(var rule in rules)knownRules[rule.Path]=rule.Content;
                 var measured=await MeasureAsync(settings.Coding.Url,history,Tools(settings.Assistant),token);contextReserve=measured.Reserve;ReportUsage(measured,report);
-                if(iteration>0&&compaction==CompactionMode.Automatic&&NeedsCompaction(measured))
+                if(round>1&&compaction==CompactionMode.Automatic&&NeedsCompaction(measured)&&(!preemptiveCompactionFailed||!Fits(measured)))
                 {
                     try{await CompactRoundAsync(false);}
                     catch(Exception ex) when(ex is not (OperationCanceledException or ChatPersistenceException))
                     {
                         if(!Fits(measured)){await IncompleteAsync("Automatic compaction failed: "+ex.Message+" Completed actions and working memory were retained.");return;}
                         report("contextWarning","Automatic compaction failed; original context retained: "+ex.Message);
-                        // Stop retrying a failed compaction at every round in the same task.
-                        compactions=3;
+                        // Retry a failed proactive summary only when output space actually runs out.
+                        preemptiveCompactionFailed=true;
                     }
                     rules=AgentRules.Load(workspace,global:globalRulesPath);history[0]=BuildSystem(settings,workspace,rules);
                     foreach(var rule in rules)knownRules[rule.Path]=rule.Content;
                     measured=await MeasureAsync(settings.Coding.Url,history,Tools(settings.Assistant),token);contextReserve=measured.Reserve;ReportUsage(measured,report);
                 }
-                if(!Fits(measured)){await IncompleteAsync("The next tool round has no output space. Completed actions remain saved. Compact this chat or start a smaller task. Automatic compaction attempts are bounded.");return;}
+                if(!Fits(measured)){await IncompleteAsync("The next tool round has no output space in the active model context after compaction. Completed actions remain saved. Refresh or compact this chat, or increase the server context before continuing here.");return;}
                 Progress("Generating");
                 report("modelRound",round);
                 report("chatStatus", "Generating response…");
@@ -144,6 +155,8 @@ public sealed partial class AssistantChat : IDisposable
                 var answer=generated.Message;
                 if(generated.Limited)
                 {
+                    var partialText=answer["content"]?.GetValue<string>()??"";
+                    var noProgress=lastRecoveryText is not null&&(string.IsNullOrWhiteSpace(partialText)||string.Equals(lastRecoveryText,partialText,StringComparison.Ordinal));
                     var hadProposal=answer.Remove("tool_calls");
                     var note=string.IsNullOrEmpty(answer["content"]?.GetValue<string>())
                         ? !string.IsNullOrEmpty(answer["reasoning_content"]?.GetValue<string>())?"The output budget was exhausted while thinking; no final answer was returned.":"The output budget was exhausted before a final answer was returned."
@@ -151,24 +164,23 @@ public sealed partial class AssistantChat : IDisposable
                     if(hadProposal)note+=" An unfinished tool proposal was discarded and was not executed.";
                     answer["content"]=(answer["content"]?.GetValue<string>()??"")+"\n[AI Control: "+note+"]";
                     history.Add(answer);Commit();
-                    if(compaction==CompactionMode.Automatic&&automaticReplyBudget&&recoveries<2&&compactions<3&&iteration<15)
+                    if(compaction==CompactionMode.Automatic&&automaticReplyBudget&&!noProgress)
                     {
                         report("taskRecovery",note+" Saving a checkpoint and compacting before resuming this task with thinking disabled.");
                         try
                         {
-                            if(await CompactRoundAsync(true))
-                            {
-                                recoveries++;roundThinking=false;
-                                history.Add(new JsonObject{["role"]="user",["ai_control"]="continuation",["content"]="[AI Control continuation: no new permissions] Continue the same unfinished user task from the retained request and memory. Use completed tool results; do not replay saved files, executed scripts or denied actions. The interrupted proposal was not executed. Thinking is disabled for this recovery; return a concrete answer or a complete tool proposal. If required information is missing, explain what is needed."});
-                                Commit();Progress("Resuming");continue;
-                            }
+                            await CompactRoundAsync(true);
+                            recoveries++;roundThinking=false;lastRecoveryText=partialText;
+                            history.Add(new JsonObject{["role"]="user",["ai_control"]="continuation",["content"]="[AI Control continuation: no new permissions] Continue the same unfinished user task from the retained request and memory. Use completed tool results; do not replay saved files, executed scripts or denied actions. The interrupted proposal was not executed. Thinking is disabled for this recovery; return a concrete answer or a complete tool proposal. If required information is missing, explain what is needed."});
+                            Commit();Progress("Resuming");continue;
                         }
                         catch(Exception ex) when(ex is not (OperationCanceledException or ChatPersistenceException))
                         { note+=" Automatic recovery failed: "+ex.Message+" Original working memory and completed actions were retained."; }
                     }
                     note+=!automaticReplyBudget?(contextReserve<replyReserve?" Your Custom limit was clipped to free context. Compact before continuing; increasing the limit alone does not add space.":" Your Custom output limit was respected. Increase it or select Automatic, then continue.")
                         :compaction!=CompactionMode.Automatic?" Automatic recovery is disabled in "+compaction+" compaction mode. Compact explicitly, then continue."
-                        :" The task stopped after bounded automatic recovery. Try disabling Thinking or narrowing the task, then continue.";
+                        :noProgress?" Recovery again exhausted the available context without a new answer or completed tool action. Automatic continuation stopped because no progress was made. The retained conversation can be continued in this chat."
+                        :" Automatic recovery could not restore usable context. The retained conversation can be continued in this chat.";
                     await IncompleteAsync(note);return;
                 }
                 history.Add(answer);
@@ -206,6 +218,7 @@ public sealed partial class AssistantChat : IDisposable
                     catch (Exception ex) when (ex is not OperationCanceledException) { result = "Tool error in " + operation + ": " + ex.Message; }
                     history.Add(new JsonObject { ["role"] = "tool", ["tool_call_id"] = id, ["content"] = result });
                     completedCalls++;completedTools++;lastAction=operation[..Math.Min(operation.Length,580)];
+                    if(!result.StartsWith("Tool error",StringComparison.Ordinal)&&!result.StartsWith("The user denied",StringComparison.Ordinal))lastRecoveryText=null;
                     if(name is "write_file" or "run_script")actionReceipts.Add(lastAction+": "+result[..Math.Min(result.Length,400)]);
                     if(name=="write_file"&&result.StartsWith("Saved ",StringComparison.Ordinal))savedFiles++;
                     report("toolResult", operation + "\n" + (result.Length > 1800 ? result[..1800] + "…" : result));
@@ -218,7 +231,6 @@ public sealed partial class AssistantChat : IDisposable
                 }
                 Progress("Tools completed");Commit();
             }
-            throw new InvalidDataException("The assistant reached its 16-step limit. Start a new message with a narrower task.");
         }
         catch { ImportMemory(retained); ReportUsage(new(null,contextCapacity,contextReserve,false,"Task ended early; completed rounds retained, refresh context"),report); throw; }
     }

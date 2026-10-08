@@ -3,6 +3,24 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 internal static class SessionLiveChecks
 {
+    public static async Task CompactionRecovery(string evidence)
+    {
+        Directory.CreateDirectory(evidence);var workspace=Path.Combine(evidence,"synthetic-compaction-workspace");Directory.CreateDirectory(workspace);
+        var global=Path.Combine(evidence,"synthetic-compaction-rules.md");File.WriteAllText(global,"Synthetic feature test only. Do not use tools or access user projects. Reply directly.");
+        var settings=SettingsStore.Load() with{ProjectDirectory=workspace,Assistant=new()};
+        using var control=new ServerControl(settings.Coding);var status=await control.ReadStatusAsync();
+        if(!status.QueueKnown||!status.Healthy||status.HasJobs)throw new Exception("The live coding server must be healthy and idle.");
+        using var chat=new AssistantChat(rulesPath:global);using var timeout=new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var source=string.Join("\n",Enumerable.Range(0,150).Select(i=>$"Synthetic item {i}: the sample window uses a blue background. Completed: inspect fixture-{i}.txt without changes. Open work: verify the window and report the outcome. Keep existing files and current read-only permissions."));
+        chat.ImportMemory(new(){History=[new(){["role"]="system",["content"]="Synthetic old rules."},new(){["role"]="user",["content"]=source},new(){["role"]="assistant",["content"]="Recorded synthetic fixture checks."}]});
+        var original=chat.ExportMemory();var events=new List<object>();string answer="";
+        void Report(string type,object? value){events.Add(new{type,value});if(type=="chatToken")answer+=value;}
+        var checkpoint=await chat.CompactAsync(settings,Report,timeout.Token,compactRecent:true);
+        await chat.RunAsync(settings,"Reply with exactly COMPACTION_OK. Do not use tools.",[],(_,_)=>throw new Exception("No tools allowed"),Report,timeout.Token,replyReserve:32,automaticReplyBudget:false,thinkingEnabled:false);
+        if(!answer.Contains("COMPACTION_OK")||checkpoint.After>=checkpoint.Before||JsonSerializer.Serialize(checkpoint.Memory,SettingsStore.Json)!=JsonSerializer.Serialize(original,SettingsStore.Json))throw new Exception("Live compaction, exact checkpoint or subsequent prompt failed.");
+        File.WriteAllText(Path.Combine(evidence,"compaction-recovery-live.json"),JsonSerializer.Serialize(new{passed=true,checkpoint.Before,checkpoint.After,answer,events},SettingsStore.Json));
+        Console.WriteLine($"Live synthetic compaction and subsequent prompt passed: {checkpoint.Before} -> {checkpoint.After} tokens; {answer.Trim()}.");
+    }
     public static async Task OutputBudget(string evidence)
     {
         Directory.CreateDirectory(evidence);var workspace=Path.Combine(evidence,"synthetic-budget-workspace");Directory.CreateDirectory(workspace);

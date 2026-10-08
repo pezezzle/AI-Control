@@ -26,7 +26,7 @@ function openChatMenu(session:{id:string;title:string;status:string},x:number,y:
 }
 function renderTask(progress:TaskProgress|null,status=selectedSession?.status??'Ready'):void {
  taskProgress=progress;
- element('task-phase').textContent=progress?`${progress.phase}${progress.round?' · round '+progress.round+' / 16':''}${progress.recoveries?' · recovery '+progress.recoveries+' / 2':''}`:status;
+ element('task-phase').textContent=progress?`${progress.phase}${progress.round?' · round '+progress.round:''}${progress.recoveries?' · recovery '+progress.recoveries:''}`:status;
  element('task-actions').textContent=progress?`${progress.completedTools} ${progress.completedTools===1?'tool':'tools'} completed · ${progress.savedFiles} ${progress.savedFiles===1?'file':'files'} saved · Thinking ${progress.thinkingEnabled?'on':'off'}`:'Tool actions and saved files appear in Activity. Internal thinking does not create files.';
  element('task-last-action').textContent=progress?`Last action: ${progress.lastAction}`:'No task started.';
  element('task-request').textContent=progress?.request?`Request: ${progress.request}`:'';element('task-request').hidden=!progress?.request;
@@ -35,6 +35,12 @@ function recordedTask(session:Session):TaskProgress|null {
  const latest=session.entries.map(entry=>entry.role).lastIndexOf('user');if(latest<0)return null;
  const tools=session.entries.slice(latest+1).filter(entry=>entry.role==='activity'&&/^(list_files|read_file|search_text|write_file|run_script)(?: |\n)/.test(entry.text));
  return {round:0,phase:session.status,completedTools:tools.length,savedFiles:tools.filter(entry=>/^write_file[^\n]*\nSaved /.test(entry.text)).length,lastAction:tools.at(-1)?.text.split('\n')[0]??'No workspace tools completed yet.',recoveries:0,thinkingEnabled:session.thinkingEnabled!==false,request:session.entries[latest].text.slice(0,200)};
+}
+function showCompaction(progress?:{answerCharacters?:number;elapsedSeconds?:number}):void {
+ const detail=progress?` · ${Math.max(0,Number(progress.answerCharacters)||0).toLocaleString()} summary characters · ${Math.max(0,Number(progress.elapsedSeconds)||0)}s for this segment`:'';
+ chatStatus('Compacting previous context'+detail);
+ pendingAnswer('Compacting previous context before answering your message. The task answer starts afterward. Cancel remains available.');
+ if(taskProgress)renderTask({...taskProgress,phase:'Compacting previous context'+detail,thinkingEnabled:false});
 }
 function tryMeasure():void {
  if(selectedSession&&selectedSession.memory?.usage?.used==null&&!chatBusy&&!state?.chatBusy&&service('coding')?.healthy&&selectedSession.model===state?.settings.coding.model&&!measuredSessions.has(selectedSession.id)){measuredSessions.add(selectedSession.id);chatSend('chatMeasure');}
@@ -66,10 +72,12 @@ function renderSession(session:Session):void {
  element('chat-model').textContent=`${session.model} · ${session.status}`;
  element<HTMLSelectElement>('chat-access').value=session.access;renderAccess();element<HTMLInputElement>('chat-scripts').checked=session.allowScripts;
  element<HTMLSelectElement>('context-mode').value=session.compaction;element<HTMLInputElement>('context-reserve').value=String(session.replyReserve);element<HTMLSelectElement>('context-budget-mode').value=session.automaticReplyBudget===false?'Custom':'Automatic';element('context-reserve-label').hidden=session.automaticReplyBudget!==false;
- element<HTMLInputElement>('chat-thinking').checked=session.thinkingEnabled!==false;renderTask(session.progress??recordedTask(session),session.status);
+ const busy=['Queued','Running','Compacting','Waiting for approval'].includes(session.status);
+ const staleProgress=busy&&!!session.progress&&['Finished','Failed','Incomplete','Canceled','Stopped','Interrupted'].includes(session.progress.phase);
+ element<HTMLInputElement>('chat-thinking').checked=session.thinkingEnabled!==false;renderTask(staleProgress?recordedTask(session):session.progress??recordedTask(session),session.status);
  element('chat-history').replaceChildren();let afterUser=false;
  for(const entry of session.entries){const body=addMessage(entry.role,entry.text);if(entry.role==='assistant'&&(!['Running','Queued'].includes(session.status)||entry.round!==session.progress?.round))renderChatMarkdown(body,entry.text);for(const data of entry.images??[]){const img=document.createElement('img');img.src=data;img.alt='Saved image attachment';body.parentElement?.append(img);}if(entry.role==='user'){afterUser=true;currentAnswer=null;}if(entry.role==='assistant'&&afterUser&&entry.round===session.progress?.round)currentAnswer=body;}
- const busy=['Queued','Running','Compacting','Waiting for approval'].includes(session.status);setChatBusy(busy);
+ setChatBusy(busy);
  if(busy&&!currentAnswer&&session.status!=='Compacting'){currentAnswer=addMessage('assistant','');pendingAnswer(session.status==='Queued'?'Queued · waiting for the other chat…':'Waiting for the model response…');}
  if(!busy)currentAnswer=null;
  if(changed||atBottom)history.scrollTop=history.scrollHeight;
@@ -77,6 +85,7 @@ function renderSession(session:Session):void {
  const checkpoints=element<HTMLSelectElement>('context-checkpoints');checkpoints.replaceChildren();
  for(const point of [...session.checkpoints].reverse()){const option=document.createElement('option');option.value=point.id;option.textContent=`${new Date(point.created).toLocaleString()} · ${point.before.toLocaleString()} → ${point.after.toLocaleString()} tokens`;checkpoints.append(option);}
  element<HTMLButtonElement>('context-restore').disabled=busy||!session.checkpoints.length;chatStatus(session.status);
+ if(busy&&(session.status==='Compacting'||taskProgress?.phase.startsWith('Compacting')))showCompaction();
  if(!session.entries.length){const empty=document.createElement('p');empty.className='chat-empty';empty.textContent='What would you like to work on?';element('chat-history').append(empty);}
 }
 let attachments:{name:string;data:string}[]=[];
@@ -148,18 +157,18 @@ bridge?.addEventListener('message',event=>{
  if(type==='modelRound'){if(currentAnswer?.dataset.pending==='true')currentAnswer.parentElement?.remove();else if(currentAnswer)renderChatMarkdown(currentAnswer,currentAnswer.textContent??'');currentAnswer=null;}
  if(type==='taskRecovery'){if(currentAnswer?.dataset.pending==='true')currentAnswer.parentElement?.remove();else if(currentAnswer)renderChatMarkdown(currentAnswer,currentAnswer.textContent??'');currentAnswer=null;addMessage('activity',String(value));chatStatus('Saving checkpoint and resuming…');}
  if(type==='contextCompacted')addMessage('activity',`Context compacted: ${value.before.toLocaleString()} → ${value.after.toLocaleString()} tokens. Original transcript and a restore checkpoint were saved.`);
- if(type==='compactionProgress')chatStatus('Compacting working context locally…');
+ if(type==='compactionProgress')showCompaction(value);
  if(type==='snapshot'){
   const snapshot=event.data as Snapshot;const coding=snapshot.settings.coding;
   if(!selectedSession){element('chat-path').textContent=snapshot.settings.projectDirectory;element('chat-model').textContent=`${coding.model} · ${coding.contextSize.toLocaleString()} context tokens`;element<HTMLSelectElement>('chat-access').value=snapshot.settings.assistant?.access??'ReadOnly';element<HTMLInputElement>('chat-scripts').checked=snapshot.settings.assistant?.allowScriptExecution??false;}
   element('global-rules-path').textContent=`Global rules: ${snapshot.globalRulesPath??'Local AI Control AGENTS.md'}`;renderModels();tryMeasure();
  }
  if(type==='openChat')showChat();
- if(type==='chatStatus'){chatStatus(String(value));if(String(value).startsWith('Using '))pendingAnswer('The assistant is using workspace tools. See activity below.');}
+ if(type==='chatStatus'){chatStatus(String(value));if(String(value).startsWith('Using '))pendingAnswer('The assistant is using workspace tools. See activity below.');else if(String(value).startsWith('Compacting'))showCompaction();}
  if(type==='chatProgress'){
   if(taskProgress){renderTask({...taskProgress,phase:String(value.phase)});if(selectedSession)selectedSession.progress=taskProgress;}
   const seconds=Math.max(0,Number(value.elapsedSeconds)||0),characters=Math.max(0,Number(value.reasoningCharacters)||0);
-  if(taskProgress)element('task-phase').textContent=`${value.phase==='thinking'?'Thinking · '+characters.toLocaleString()+' reasoning characters':value.phase==='answering'?'Writing answer':'Preparing'} · ${seconds}s · round ${taskProgress.round} / 16`;
+  if(taskProgress)element('task-phase').textContent=`${value.phase==='thinking'?'Thinking · '+characters.toLocaleString()+' reasoning characters':value.phase==='answering'?'Writing answer':'Preparing'} · ${seconds}s · round ${taskProgress.round}`;
   if(value.phase==='thinking'){chatStatus(`Thinking · ${characters.toLocaleString()} reasoning characters · ${seconds}s for this response`);pendingAnswer('The model is thinking. Its progress appears below; no final answer yet.');}
   else if(value.phase==='answering')chatStatus(`Writing answer · ${seconds}s for this response`);
  }

@@ -93,8 +93,8 @@ internal static class ContinuationChecks
             backend=new Backend([Limited(),Limited(),Limited(),AssistantChecks.Answer("Must not run")]);events.Clear();
             using(var chat=new AssistantChat(new HttpClient(backend),global))
             {
-                await chat.RunAsync(settings,"Synthetic bounded recovery",[],(_,_)=>Task.FromResult(false),(kind,_)=>events.Add(kind),CancellationToken.None,checkpoint:_=>{});
-                check(backend.Normal.Count==3&&events.Count(e=>e=="taskRecovery")==2&&events.Contains("chatIncomplete"),"Repeated output exhaustion stops after two recoveries without an infinite inference loop");
+                await chat.RunAsync(settings,"Synthetic no-progress recovery",[],(_,_)=>Task.FromResult(false),(kind,_)=>events.Add(kind),CancellationToken.None,checkpoint:_=>{});
+                check(backend.Normal.Count==2&&events.Count(e=>e=="taskRecovery")==1&&events.Contains("chatIncomplete"),"Repeated output exhaustion without any useful progress stops recovery instead of looping");
             }
             foreach(var mode in new[]{CompactionMode.Manual,CompactionMode.Off})
             {
@@ -128,6 +128,35 @@ internal static class ContinuationChecks
                 check(chat.ExportMemory().History.Any(m=>m["content"] is JsonArray parts&&parts.Any(p=>p?["image_url"]?["url"]?.ToString()==image))&&backend.Summaries.All(r=>!r.ToJsonString().Contains(image)),"In-task compaction retains the current attachment verbatim while summary input uses an image marker");
             }
             File.WriteAllText(Path.Combine(root,"medium.txt"),new string('m',10000));
+            backend=new Backend(Enumerable.Repeat(Calls(("read_file",new{path="medium.txt"})),48).Append(AssistantChecks.Answer("Long synthetic task complete"))){Capacity=8192};events.Clear();
+            AssistantTaskProgress? longProgress=null;ChatMemory? longSaved=null;
+            using(var chat=new AssistantChat(new HttpClient(backend),global))
+            {
+                await chat.RunAsync(settings,"Read the synthetic fixture repeatedly",[],(_,_)=>Task.FromResult(false),(kind,value)=>{events.Add(kind);if(value is AssistantTaskProgress progress)longProgress=progress;},CancellationToken.None,checkpoint:_=>{},saveMemory:memory=>longSaved=memory);
+                check(backend.Normal.Count==49&&longProgress is {Round:49,CompletedTools:48}&&events.Contains("chatDone")&&!events.Contains("chatIncomplete"),"A single task completes after 48 tool rounds without a fixed round limit");
+                check(events.Count(e=>e=="contextCompacted")>3&&longSaved is not null&&longSaved.History.Last()["content"]!.ToString()=="Long synthetic task complete","Repeated successful in-task compactions continue beyond three while keeping durable completed memory");
+                AssistantChat.ValidateMemory(chat.ExportMemory());
+            }
+            backend=new Backend([Limited(new string('a',18000)),Limited(new string('b',18000)),Limited(new string('c',18000)),Limited(new string('d',18000)),AssistantChecks.Answer("Progressing recovery complete")]);events.Clear();
+            using(var chat=new AssistantChat(new HttpClient(backend),global))
+            {
+                await chat.RunAsync(settings,"Synthetic distinct partial progress",[],(_,_)=>Task.FromResult(false),(kind,_)=>events.Add(kind),CancellationToken.None,checkpoint:_=>{});
+                check(backend.Normal.Count==5&&events.Count(e=>e=="taskRecovery")==4&&events.Contains("chatDone")&&!events.Contains("chatIncomplete"),"Distinct partial answers can recover more than twice and finish in the same task");
+            }
+            backend=new Backend([Limited("Repeated identical partial"),Limited("Repeated identical partial"),AssistantChecks.Answer("Must not run")]);events.Clear();
+            using(var chat=new AssistantChat(new HttpClient(backend),global))
+            {
+                await chat.RunAsync(settings,"Synthetic identical partial progress",[],(_,_)=>Task.FromResult(false),(kind,_)=>events.Add(kind),CancellationToken.None,checkpoint:_=>{});
+                check(backend.Normal.Count==2&&events.Count(e=>e=="taskRecovery")==1&&events.Contains("chatIncomplete"),"Repeated identical partial answers stop automatic continuation for lack of progress");
+            }
+            using(var cancellation=new CancellationTokenSource())
+            {
+                backend=new Backend(Enumerable.Repeat(Calls(("read_file",new{path="first.txt"})),30));int finishedTools=0;bool cancelled=false;ChatMemory? durable=null;
+                using var chat=new AssistantChat(new HttpClient(backend),global);
+                try{await chat.RunAsync(settings,"Synthetic cancellation after many rounds",[],(_,_)=>Task.FromResult(false),(kind,_)=>{if(kind=="toolResult"&&++finishedTools==25)cancellation.Cancel();},cancellation.Token,saveMemory:memory=>durable=memory);}catch(OperationCanceledException){cancelled=true;}
+                var memory=chat.ExportMemory();AssistantChat.ValidateMemory(memory);
+                check(cancelled&&backend.Normal.Count==25&&memory.History.Count(m=>m["role"]?.ToString()=="tool")==25&&durable is not null&&memory.History.Select(m=>m.ToJsonString()).SequenceEqual(durable.History.Select(m=>m.ToJsonString())),"Cancellation after 25 rounds stops new inference and durably retains every completed tool result");
+            }
             backend=new Backend([Calls(("read_file",new{path="medium.txt"}))]){Capacity=8192,Summary=AssistantChecks.Answer(new string('s',19000))};events.Clear();
             using(var chat=new AssistantChat(new HttpClient(backend),global))
             {
@@ -137,8 +166,10 @@ internal static class ContinuationChecks
             }
             session.ThinkingEnabled=false;session.Progress=new(3,"Finished",4,2,"write_file (path: synthetic.txt)",1,false);store.Save(session);
             var persisted=store.Load().Single();check(!persisted.ThinkingEnabled&&persisted.Progress==session.Progress,"Thinking preference and measured task progress survive session persistence");
+            session.Status="Ready";session.Progress=new(49,"Finished",320,300,"Synthetic long task",7,false);session.Entries.Add(new(){Role="assistant",Text="Synthetic long task",Round=49});store.Save(session);
+            persisted=store.Load().Single();check(persisted.Progress==session.Progress&&persisted.Entries.Last().Round==49,"Long-task round, tool, file and recovery counters persist without obsolete upper bounds");
             var legacy=JsonSerializer.SerializeToNode(session,SettingsStore.Json)!.AsObject();legacy.Remove("thinkingEnabled");check(legacy.Deserialize<ChatSession>(SettingsStore.Json)!.ThinkingEnabled,"Legacy chats retain Thinking by default");
-            reject(()=>store.Save(session with{Progress=new(17,"Bad",0,0,"",0,true)}),"Malformed persisted task progress is rejected");
+            reject(()=>store.Save(session with{Progress=new(-1,"Bad",0,0,"",0,true)}),"Malformed persisted task progress is rejected");
 
             // Independent instances model the serialized host queue: recovered memory must not leak.
             backend=new Backend([Limited("Isolated first task"),AssistantChecks.Answer("First task complete")]);

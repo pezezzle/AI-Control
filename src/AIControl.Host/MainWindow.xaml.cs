@@ -125,6 +125,23 @@ public partial class MainWindow : Window
             }
             if (type == "openEditor") { OpenEditor(); return; }
             if (type == "copyApi") { Clipboard.SetText(settings.Coding.Url + "/v1"); Send(new { type = "apiCopied" }); return; }
+            if (type == "selectVision")
+            {
+                var coding = services["coding"];
+                if (chatBusy || coding.Operating || coding.StopScheduled) throw new InvalidOperationException("Finish the chat and stop the coding server before changing image support.");
+                var enabled = root.GetProperty("enabled").GetBoolean();
+                coding.Operating = true; SendSnapshot();
+                try
+                {
+                    var current = await coding.Control.ReadStatusAsync();
+                    if (current.State != ServerState.Offline) throw new InvalidOperationException("Stop the coding server before changing image support.");
+                    var updated = settings with { Coding = settings.Coding with { VisionEnabled = enabled } };
+                    SettingsStore.Save(updated); settings = updated;
+                    coding.Control.Dispose(); services["coding"] = new(settings.Coding);
+                }
+                finally { coding.Operating = false; await RefreshAsync(); }
+                return;
+            }
             if (type == "selectModel")
             {
                 var coding = services["coding"];

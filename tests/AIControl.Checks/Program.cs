@@ -10,6 +10,7 @@ if(args.Length==1&&args[0]=="--settings-summary")
 
 if (args.Length == 2 && args[0] == "--template-smoke") { await TemplateChecks.RunLive(args[1]); return; }
 if (args.Length == 2 && args[0] == "--sessions-smoke") { await SessionLiveChecks.Run(args[1]); return; }
+if (args.Length == 2 && args[0] == "--compaction-recovery-smoke") { await SessionLiveChecks.CompactionRecovery(args[1]); return; }
 if (args.Length == 2 && args[0] == "--output-budget-smoke") { await SessionLiveChecks.OutputBudget(args[1]); return; }
 if (args.Length == 2 && args[0] == "--assistant-smoke") { await AssistantLiveChecks.Run(args[1]); return; }
 if (args.Length == 2 && args[0] == "--speech-smoke") { await AssistantLiveChecks.Speech(args[1]); return; }
@@ -121,6 +122,12 @@ try
     var original = new ControlSettings() with { Coding = llama with { ContextSize = 24576, Model = "qwen2.5-coder-32b-instruct.gguf", VisionEnabled=false }, Assistant=new(){Access=WorkspaceAccess.ReadWrite,AllowScriptExecution=true,SyncContinueContext=false} };
     SettingsStore.Save(original, temporary); var restored = SettingsStore.Load(temporary);
     Check(restored == original, "Settings survive atomic save and reload");
+    SettingsStore.Save(original with { Coding = original.Coding with { VisionEnabled = true } }, temporary);
+    Check(SettingsStore.Load(temporary).Coding.VisionEnabled, "Enabling images persists independently of model and context");
+    var legacySettings = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(original, SettingsStore.Json))!;
+    legacySettings["coding"]!.AsObject().Remove("visionEnabled");
+    File.WriteAllText(temporary, legacySettings.ToJsonString());
+    Check(SettingsStore.Load(temporary).Coding.VisionEnabled, "Legacy settings retain their image support default");
     Check(!File.ReadAllText(temporary).Contains("logDirectory"), "Computed runtime paths are not persisted");
     File.WriteAllText(temporary, "null"); Reject(() => SettingsStore.Load(temporary), "Empty config rejected");
 } finally { File.Delete(temporary); }

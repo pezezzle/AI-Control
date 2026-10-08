@@ -3,7 +3,7 @@
  <Window.Resources><ResourceDictionary><ResourceDictionary.MergedDictionaries><ResourceDictionary Source="DarkMenus.xaml"/></ResourceDictionary.MergedDictionaries></ResourceDictionary></Window.Resources>
  <Grid><Grid.RowDefinitions><RowDefinition Height="32"/><RowDefinition Height="*"/></Grid.RowDefinitions>
   <DockPanel Background="#181818" LastChildFill="True">
-   <TextBlock DockPanel.Dock="Right" Text="AI Control · 0.4.6 · Local on your PC" Foreground="#909090" VerticalAlignment="Center" FontSize="11" Margin="12,0"/>
+   <TextBlock DockPanel.Dock="Right" Text="AI Control · 0.4.9 · Local on your PC" Foreground="#909090" VerticalAlignment="Center" FontSize="11" Margin="12,0"/>
    <Menu x:Name="AppMenu" IsEnabled="False" FontSize="13" BorderBrush="#303030" BorderThickness="0,0,0,1">
     <MenuItem Header="_File">
      <MenuItem Header="_New chat" Tag="newChat" InputGestureText="Ctrl+N" Click="Menu_Click"/>
